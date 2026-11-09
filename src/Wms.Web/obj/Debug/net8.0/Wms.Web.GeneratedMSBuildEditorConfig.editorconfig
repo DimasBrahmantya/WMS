@@ -1,0 +1,86 @@
+is_global = true
+build_property.MudDebugAnalyzer = 
+build_property.MudAllowedAttributePattern = 
+build_property.MudIllegalParameters = 
+build_property.TargetFramework = net8.0
+build_property.TargetPlatformMinVersion = 
+build_property.UsingMicrosoftNETSdkWeb = true
+build_property.ProjectTypeGuids = 
+build_property.InvariantGlobalization = 
+build_property.PlatformNeutralAssembly = 
+build_property.EnforceExtendedAnalyzerRules = 
+build_property._SupportedPlatformList = Linux,macOS,Windows
+build_property.RootNamespace = Wms.Web
+build_property.RootNamespace = Wms.Web
+build_property.ProjectDir = D:\Dimas\Project Mini\WMS\src\Wms.Web\
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
+build_property.RazorLangVersion = 8.0
+build_property.SupportLocalizedComponentNames = 
+build_property.GenerateRazorMetadataSourceChecksumAttributes = 
+build_property.MSBuildProjectDirectory = D:\Dimas\Project Mini\WMS\src\Wms.Web
+build_property._RazorSourceGeneratorDebug = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/App.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xBcHAucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Account/Login.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xBY2NvdW50XExvZ2luLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Admin/AuditLogs.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xBZG1pblxBdWRpdExvZ3MucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Admin/Users.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xBZG1pblxVc2Vycy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Error.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xFcnJvci5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Home.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xIb21lLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Master/Categories.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xNYXN0ZXJcQ2F0ZWdvcmllcy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Master/Customers.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xNYXN0ZXJcQ3VzdG9tZXJzLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Master/Products.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xNYXN0ZXJcUHJvZHVjdHMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Master/Suppliers.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xNYXN0ZXJcU3VwcGxpZXJzLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Master/Units.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xNYXN0ZXJcVW5pdHMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Master/Warehouses.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xNYXN0ZXJcV2FyZWhvdXNlcy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Routes.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xSb3V0ZXMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/_Imports.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xfSW1wb3J0cy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Layout/MainLayout.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcTWFpbkxheW91dC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = b-ghgjb20koc
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Layout/NavMenu.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcTmF2TWVudS5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = b-q6cb66wfam

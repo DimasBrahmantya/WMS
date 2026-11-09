@@ -1,0 +1,158 @@
+@page "/admin/audit-logs"
+@attribute [Authorize(Roles = "SuperAdmin,Supervisor,Auditor")]
+@inject IWmsDbContext DbContext
+@inject ISnackbar Snackbar
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>Audit Log - WMS Nusantara</PageTitle>
+
+<div class="mb-4 d-flex justify-space-between align-center">
+    <div>
+        <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Primary">Audit Trail & Log Aktivitas</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Riwayat seluruh perubahan data dan mutasi sistem yang tidak dapat diubah (append-only).</MudText>
+    </div>
+    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadLogsAsync">
+        Refresh
+    </MudButton>
+</div>
+
+<MudPaper Elevation="2" Class="pa-4">
+    <div class="d-flex flex-wrap gap-4 mb-4">
+        <MudTextField @bind-Value="_searchString" Placeholder="Cari entitas, ID, atau pengguna..." Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0" Immediate="true"
+                      DebounceInterval="300" OnDebounceIntervalElapsed="LoadLogsAsync" />
+
+        <MudSelect T="string" Label="Aksi" @bind-Value="_selectedAction" SelectedValuesChanged="LoadLogsAsync" Dense="true" Class="mt-0" Style="min-width: 150px;">
+            <MudSelectItem Value="@("")">Semua Aksi</MudSelectItem>
+            <MudSelectItem Value="@("Create")">Create</MudSelectItem>
+            <MudSelectItem Value="@("Update")">Update</MudSelectItem>
+            <MudSelectItem Value="@("Delete")">Delete</MudSelectItem>
+        </MudSelect>
+    </div>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+    }
+
+    <MudTable Items="_logs" Dense="true" Hover="true" Striped="true" Elevation="0">
+        <HeaderContent>
+            <MudTh>Waktu (UTC)</MudTh>
+            <MudTh>Pengguna</MudTh>
+            <MudTh>Aksi</MudTh>
+            <MudTh>Entitas</MudTh>
+            <MudTh>ID Entitas</MudTh>
+            <MudTh>Correlation ID</MudTh>
+            <MudTh Style="text-align: right;">Detail Perubahan</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Waktu">@context.TimestampUtc.ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
+            <MudTd DataLabel="Pengguna">@(context.UserName ?? "Sistem")</MudTd>
+            <MudTd DataLabel="Aksi">
+                <MudChip T="string" Size="Size.Small" Color="@GetActionColor(context.Action)">@context.Action</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Entitas">@context.EntityType</MudTd>
+            <MudTd DataLabel="ID">@context.EntityId</MudTd>
+            <MudTd DataLabel="Correlation ID">
+                <code style="font-size: 0.75rem;">@context.CorrelationId</code>
+            </MudTd>
+            <MudTd DataLabel="Detail" Style="text-align: right;">
+                <MudIconButton Icon="@Icons.Material.Filled.Info" Size="Size.Small" Color="Color.Primary" OnClick="@(() => ShowDetail(context))" />
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new int[] { 10, 25, 50 }" />
+        </PagerContent>
+    </MudTable>
+</MudPaper>
+
+@if (_selectedLog != null)
+{
+    <MudDialog @bind-Visible="_showDetailDialog" Options="_dialogOptions">
+        <TitleContent>
+            <MudText Typo="Typo.h6">
+                Detail Perubahan: @_selectedLog.EntityType (@_selectedLog.Action)
+            </MudText>
+        </TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.subtitle2" Class="mb-1"><strong>Nilai Sebelumnya (Old Values):</strong></MudText>
+            <pre style="background: #f1f5f9; padding: 8px; border-radius: 4px; max-height: 150px; overflow-y: auto; font-size: 0.8rem;">@(_selectedLog.OldValues ?? "None")</pre>
+
+            <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1"><strong>Nilai Baru (New Values):</strong></MudText>
+            <pre style="background: #f1f5f9; padding: 8px; border-radius: 4px; max-height: 150px; overflow-y: auto; font-size: 0.8rem;">@(_selectedLog.NewValues ?? "None")</pre>
+
+            @if (!string.IsNullOrEmpty(_selectedLog.AffectedColumns))
+            {
+                <MudText Typo="Typo.caption" Class="mt-2 d-block">Kolom diubah: @_selectedLog.AffectedColumns</MudText>
+            }
+        </DialogContent>
+        <DialogActions>
+            <MudButton Color="Color.Primary" OnClick="@(() => _showDetailDialog = false)">Tutup</MudButton>
+        </DialogActions>
+    </MudDialog>
+}
+
+@code {
+    private List<Wms.Domain.Entities.System.AuditLog> _logs = new();
+    private bool _loading = false;
+    private string _searchString = string.Empty;
+    private string _selectedAction = string.Empty;
+
+    private bool _showDetailDialog = false;
+    private Wms.Domain.Entities.System.AuditLog? _selectedLog;
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLogsAsync();
+    }
+
+    private async Task LoadLogsAsync()
+    {
+        _loading = true;
+        try
+        {
+            var query = DbContext.AuditLogs.AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(_selectedAction))
+            {
+                query = query.Where(a => a.Action == _selectedAction);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_searchString))
+            {
+                query = query.Where(a =>
+                    a.EntityType.Contains(_searchString) ||
+                    (a.EntityId != null && a.EntityId.Contains(_searchString)) ||
+                    (a.UserName != null && a.UserName.Contains(_searchString)));
+            }
+
+            _logs = await query
+                .OrderByDescending(a => a.TimestampUtc)
+                .Take(100)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal memuat log audit: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ShowDetail(Wms.Domain.Entities.System.AuditLog log)
+    {
+        _selectedLog = log;
+        _showDetailDialog = true;
+    }
+
+    private Color GetActionColor(string action) => action switch
+    {
+        "Create" => Color.Success,
+        "Update" => Color.Info,
+        "Delete" => Color.Error,
+        _ => Color.Default
+    };
+}

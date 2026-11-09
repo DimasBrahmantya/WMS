@@ -1,0 +1,77 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<MudThemeProvider Theme="_customTheme" />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudPopoverProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Dense="true" Color="Color.Primary">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
+        <MudText Typo="Typo.h6" Class="ml-2 font-weight-bold">WMS Nusantara</MudText>
+        <MudSpacer />
+        
+        <AuthorizeView>
+            <Authorized>
+                <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Class="mr-2">
+                    @context.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+                </MudChip>
+                <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                    <ActivatorContent>
+                        <MudButton Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.AccountCircle">
+                            @context.User.Identity?.Name
+                        </MudButton>
+                    </ActivatorContent>
+                    <ChildContent>
+                        <MudMenuItem Icon="@Icons.Material.Filled.Person">Profil Saya</MudMenuItem>
+                        <MudDivider />
+                        <form method="post" action="/account/logout">
+                            <AntiforgeryToken />
+                            <MudButton ButtonType="ButtonType.Submit" FullWidth="true" Color="Color.Error" StartIcon="@Icons.Material.Filled.Logout">
+                                Logout
+                            </MudButton>
+                        </form>
+                    </ChildContent>
+                </MudMenu>
+            </Authorized>
+            <NotAuthorized>
+                <MudButton Href="/login" Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Login">
+                    Login
+                </MudButton>
+            </NotAuthorized>
+        </AuthorizeView>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
+        <NavMenu />
+    </MudDrawer>
+
+    <MudMainContent Class="pa-4 pa-md-6" Style="min-height: calc(100vh - 48px); background-color: #f8fafc;">
+        @Body
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+
+    private readonly MudTheme _customTheme = new()
+    {
+        PaletteLight = new PaletteLight()
+        {
+            Primary = "#1e3a8a", // Navy Blue Enterprise
+            Secondary = "#0284c7",
+            AppbarBackground = "#1e3a8a",
+            Background = "#f8fafc",
+            Surface = "#ffffff",
+            DrawerBackground = "#ffffff",
+            DrawerText = "#334155"
+        }
+    };
+
+    private void DrawerToggle()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+}

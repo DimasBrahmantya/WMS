@@ -1,0 +1,157 @@
+@page "/"
+@attribute [Authorize]
+@inject IWmsDbContext DbContext
+@inject IClock Clock
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>Dashboard - Warehouse Management System</PageTitle>
+
+<div class="mb-4 d-flex justify-space-between align-center">
+    <div>
+        <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Primary">Dashboard Operasional</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Waktu Server (Jakarta): @Clock.TodayJakarta.ToString("dddd, dd MMMM yyyy")
+        </MudText>
+    </div>
+</div>
+
+<MudGrid Class="mb-6">
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Elevation="2" Class="pa-4 d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.Inventory2" Color="Color.Primary" Size="Size.Large" Class="mr-4" />
+            <div>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Total SKU Terdaftar</MudText>
+                <MudText Typo="Typo.h5" Class="font-weight-bold">@_totalSku</MudText>
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Elevation="2" Class="pa-4 d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.Warehouse" Color="Color.Info" Size="Size.Large" Class="mr-4" />
+            <div>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Gudang Aktif</MudText>
+                <MudText Typo="Typo.h5" Class="font-weight-bold">@_activeWarehouses</MudText>
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Elevation="2" Class="pa-4 d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.SwapVert" Color="Color.Success" Size="Size.Large" Class="mr-4" />
+            <div>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Mutasi Hari Ini</MudText>
+                <MudText Typo="Typo.h5" Class="font-weight-bold">@_todayMovements</MudText>
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Elevation="2" Class="pa-4 d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.History" Color="Color.Warning" Size="Size.Large" Class="mr-4" />
+            <div>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Total Aktivitas Audit</MudText>
+                <MudText Typo="Typo.h5" Class="font-weight-bold">@_totalAuditLogs</MudText>
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudGrid>
+    <MudItem xs="12" md="8">
+        <MudPaper Elevation="2" Class="pa-4">
+            <div class="d-flex justify-space-between align-center mb-4">
+                <MudText Typo="Typo.h6" Class="font-weight-bold">Log Aktivitas Sistem Terbaru</MudText>
+                <MudButton Href="/admin/audit-logs" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">
+                    Lihat Semua
+                </MudButton>
+            </div>
+
+            @if (_recentLogs == null)
+            {
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="my-4" />
+            }
+            else if (_recentLogs.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">Belum ada catatan aktivitas di audit log.</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_recentLogs" Dense="true" Hover="true" Elevation="0">
+                    <HeaderContent>
+                        <MudTh>Waktu (UTC)</MudTh>
+                        <MudTh>Pengguna</MudTh>
+                        <MudTh>Aksi</MudTh>
+                        <MudTh>Entitas</MudTh>
+                        <MudTh>ID Entitas</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Waktu">@context.TimestampUtc.ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
+                        <MudTd DataLabel="Pengguna">@(context.UserName ?? "Sistem")</MudTd>
+                        <MudTd DataLabel="Aksi">
+                            <MudChip T="string" Size="Size.Small" Color="@GetActionColor(context.Action)">@context.Action</MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Entitas">@context.EntityType</MudTd>
+                        <MudTd DataLabel="ID">@context.EntityId</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudPaper Elevation="2" Class="pa-4">
+            <MudText Typo="Typo.h6" Class="font-weight-bold mb-4">Informasi Rilis & Status</MudText>
+            <MudList T="string" Dense="true">
+                <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
+                    <MudText Typo="Typo.body2"><strong>Fase 1: Tahap Fondasi Aktif</strong></MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">ASP.NET Core 8 LTS + MudBlazor</MudText>
+                </MudListItem>
+                <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
+                    <MudText Typo="Typo.body2"><strong>Database PostgreSQL</strong></MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">EF Core Migrations & Npgsql</MudText>
+                </MudListItem>
+                <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
+                    <MudText Typo="Typo.body2"><strong>Keamanan & RBAC</strong></MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Identity, Secure Cookie, Lockout</MudText>
+                </MudListItem>
+                <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
+                    <MudText Typo="Typo.body2"><strong>Audit Trail Terpusat</strong></MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Append-only Audit Interceptor</MudText>
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private int _totalSku = 0;
+    private int _activeWarehouses = 0;
+    private int _todayMovements = 0;
+    private int _totalAuditLogs = 0;
+    private List<Wms.Domain.Entities.System.AuditLog>? _recentLogs;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _totalAuditLogs = await DbContext.AuditLogs.CountAsync();
+            _recentLogs = await DbContext.AuditLogs
+                .OrderByDescending(a => a.TimestampUtc)
+                .Take(5)
+                .ToListAsync();
+        }
+        catch
+        {
+            _recentLogs = new List<Wms.Domain.Entities.System.AuditLog>();
+        }
+    }
+
+    private Color GetActionColor(string action) => action switch
+    {
+        "Create" => Color.Success,
+        "Update" => Color.Info,
+        "Delete" => Color.Error,
+        _ => Color.Default
+    };
+}

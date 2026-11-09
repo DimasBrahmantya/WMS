@@ -1,0 +1,344 @@
+@page "/master/units"
+@attribute [Authorize]
+@inject IUnitService UnitService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Satuan Barang — WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="px-0 py-2 mb-2" />
+
+    <div class="d-flex flex-wrap justify-space-between align-center mb-4 gap-2">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Satuan Barang</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Kelola satuan dasar kuantitas barang (misal: Pcs, Box, Kg, Liter)</MudText>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+            Tambah Satuan
+        </MudButton>
+    </div>
+
+    <MudCard Elevation="2">
+        <MudCardContent Class="pa-4">
+            <!-- Filter Bar -->
+            <MudGrid Class="mb-3" Spacing="2">
+                <MudItem xs="12" sm="6" md="4">
+                    <MudTextField @bind-Value="_searchString"
+                                  Placeholder="Cari nama atau singkatan..."
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  DebounceInterval="400"
+                                  OnDebounceIntervalElapsed="OnSearchChanged"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="bool?" Value="_selectedStatus" ValueChanged="OnStatusChanged" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem T="bool?" Value="null">Semua Status</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="true">Aktif</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="false">Nonaktif</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <!-- Table -->
+            <MudTable ServerData="LoadServerData"
+                      @ref="_table"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Bordered="false"
+                      Elevation="0">
+                <HeaderContent>
+                    <MudTh><MudTableSortLabel SortLabel="name" T="UnitDto">Nama Satuan</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="abbreviation" T="UnitDto">Singkatan</MudTableSortLabel></MudTh>
+                    <MudTh Style="text-align:center;">Jumlah Produk</MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="isactive" T="UnitDto">Status</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="createdatutc" T="UnitDto">Dibuat Pada</MudTableSortLabel></MudTh>
+                    <MudTh Style="text-align:right;">Aksi</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Nama">
+                        <MudText Typo="Typo.body2" Class="font-weight-medium">@context.Name</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Singkatan">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@context.Abbreviation</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Jumlah Produk" Style="text-align:center;">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">@context.ProductCount SKU</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        @if (context.IsActive)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">Aktif</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">Nonaktif</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Dibuat">
+                        @context.CreatedAtUtc.AddHours(7).ToString("dd/MM/yyyy HH:mm")
+                    </MudTd>
+                    <MudTd DataLabel="Aksi" Style="text-align:right;">
+                        <MudTooltip Text="Ubah">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Info" OnClick="@(() => OpenEditDialog(context))" />
+                        </MudTooltip>
+                        <MudTooltip Text="@(context.IsActive ? "Nonaktifkan" : "Aktifkan")">
+                            <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.ToggleOn : Icons.Material.Filled.ToggleOff)"
+                                           Size="Size.Small"
+                                           Color="@(context.IsActive ? Color.Success : Color.Default)"
+                                           OnClick="@(() => ToggleStatus(context))" />
+                        </MudTooltip>
+                        <MudTooltip Text="Hapus">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteUnit(context))" />
+                        </MudTooltip>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <div class="pa-8 text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.Straighten" Size="Size.Large" Color="Color.Default" Class="mb-2" />
+                        <MudText Typo="Typo.body1" Color="Color.Secondary">Tidak ada satuan yang ditemukan.</MudText>
+                    </div>
+                </NoRecordsContent>
+                <LoadingContent>
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+                </LoadingContent>
+                <PagerContent>
+                    <MudTablePager RowsPerPageString="Baris per halaman:" InfoFormat="{first_item}-{last_item} dari {all_items}" PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                </PagerContent>
+            </MudTable>
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
+
+<!-- Dialog Form Satuan -->
+<MudDialog @bind-Visible="_dialogVisible" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_isEditing ? "Ubah Satuan" : "Tambah Satuan Baru")</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">@_errorMessage</MudAlert>
+        }
+        <MudForm @ref="_form" @bind-IsValid="_isFormValid">
+            <MudTextField @bind-Value="_formName"
+                          Label="Nama Satuan *"
+                          Placeholder="Contoh: Pcs, Kilogram, Box"
+                          Required="true"
+                          RequiredError="Nama satuan wajib diisi"
+                          MaxLength="100"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Class="mb-3" />
+
+            <MudTextField @bind-Value="_formAbbr"
+                          Label="Singkatan *"
+                          Placeholder="Contoh: PCS, KG, BOX"
+                          Required="true"
+                          RequiredError="Singkatan satuan wajib diisi"
+                          MaxLength="20"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Class="mb-3" />
+
+            @if (_isEditing)
+            {
+                <MudSwitch @bind-Value="_formIsActive" Label="Status Aktif" Color="Color.Primary" />
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseDialog" Disabled="_isSubmitting">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveUnit" Disabled="!_isFormValid || _isSubmitting">
+            @if (_isSubmitting)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Menyimpan...</span>
+            }
+            else
+            {
+                <span>Simpan</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private MudTable<UnitDto> _table = null!;
+    private string? _searchString;
+    private bool? _selectedStatus;
+
+    private bool _dialogVisible;
+    private bool _isEditing;
+    private bool _isSubmitting;
+    private bool _isFormValid;
+    private string? _errorMessage;
+    private MudForm _form = null!;
+
+    private Guid _currentId;
+    private string _formName = string.Empty;
+    private string _formAbbr = string.Empty;
+    private bool _formIsActive = true;
+
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+
+    private readonly List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new("Dashboard", href: "/"),
+        new("Master Data", href: null, disabled: true),
+        new("Satuan Barang", href: null, disabled: true)
+    };
+
+    private async Task<TableData<UnitDto>> LoadServerData(TableState state, CancellationToken token)
+    {
+        var query = new GetUnitsQuery
+        {
+            Page = state.Page + 1,
+            PageSize = state.PageSize,
+            Search = _searchString,
+            IsActive = _selectedStatus,
+            SortBy = state.SortLabel,
+            SortDescending = state.SortDirection == SortDirection.Descending
+        };
+
+        var result = await UnitService.GetUnitsAsync(query, token);
+        return new TableData<UnitDto>
+        {
+            TotalItems = result.TotalCount,
+            Items = result.Items
+        };
+    }
+
+    private Task OnSearchChanged(string search)
+    {
+        _searchString = search;
+        return _table.ReloadServerData();
+    }
+
+    private Task OnStatusChanged(bool? status)
+    {
+        _selectedStatus = status;
+        return _table.ReloadServerData();
+    }
+
+    private void OpenCreateDialog()
+    {
+        _isEditing = false;
+        _currentId = Guid.Empty;
+        _formName = string.Empty;
+        _formAbbr = string.Empty;
+        _formIsActive = true;
+        _errorMessage = null;
+        _dialogVisible = true;
+    }
+
+    private void OpenEditDialog(UnitDto unit)
+    {
+        _isEditing = true;
+        _currentId = unit.Id;
+        _formName = unit.Name;
+        _formAbbr = unit.Abbreviation;
+        _formIsActive = unit.IsActive;
+        _errorMessage = null;
+        _dialogVisible = true;
+    }
+
+    private void CloseDialog()
+    {
+        _dialogVisible = false;
+        _errorMessage = null;
+    }
+
+    private async Task SaveUnit()
+    {
+        await _form.Validate();
+        if (!_isFormValid) return;
+
+        _isSubmitting = true;
+        _errorMessage = null;
+
+        try
+        {
+            if (_isEditing)
+            {
+                var command = new UpdateUnitCommand(_currentId, _formName, _formAbbr, _formIsActive);
+                var result = await UnitService.UpdateUnitAsync(command);
+                if (result.Succeeded)
+                {
+                    Snackbar.Add("Satuan berhasil diperbarui.", Severity.Success);
+                    _dialogVisible = false;
+                    await _table.ReloadServerData();
+                }
+                else
+                {
+                    _errorMessage = result.ErrorMessage;
+                }
+            }
+            else
+            {
+                var command = new CreateUnitCommand(_formName, _formAbbr);
+                var result = await UnitService.CreateUnitAsync(command);
+                if (result.Succeeded)
+                {
+                    Snackbar.Add("Satuan baru berhasil ditambahkan.", Severity.Success);
+                    _dialogVisible = false;
+                    await _table.ReloadServerData();
+                }
+                else
+                {
+                    _errorMessage = result.ErrorMessage;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task ToggleStatus(UnitDto unit)
+    {
+        var result = await UnitService.ToggleUnitStatusAsync(unit.Id);
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Status satuan '{unit.Name}' berhasil diubah.", Severity.Success);
+            await _table.ReloadServerData();
+        }
+        else
+        {
+            Snackbar.Add(result.ErrorMessage ?? "Gagal mengubah status satuan.", Severity.Error);
+        }
+    }
+
+    private async Task DeleteUnit(UnitDto unit)
+    {
+        bool? confirmed = await DialogService.ShowMessageBox(
+            "Konfirmasi Hapus",
+            $"Apakah Anda yakin ingin menghapus satuan '{unit.Name}'?",
+            yesText: "Hapus", cancelText: "Batal");
+
+        if (confirmed == true)
+        {
+            var result = await UnitService.DeleteUnitAsync(unit.Id);
+            if (result.Succeeded)
+            {
+                Snackbar.Add("Satuan berhasil dihapus.", Severity.Success);
+                await _table.ReloadServerData();
+            }
+            else
+            {
+                Snackbar.Add(result.ErrorMessage ?? "Satuan tidak dapat dihapus.", Severity.Error);
+            }
+        }
+    }
+}
+

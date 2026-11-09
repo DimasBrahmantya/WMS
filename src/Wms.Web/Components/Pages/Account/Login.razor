@@ -1,0 +1,89 @@
+@page "/login"
+@layout Layout.MainLayout
+@inject NavigationManager Navigation
+
+<PageTitle>Login - Warehouse Management System</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="mt-12">
+    <MudPaper Elevation="4" Class="pa-8 rounded-lg">
+        <div class="text-center mb-6">
+            <MudIcon Icon="@Icons.Material.Filled.Warehouse" Color="Color.Primary" Style="font-size: 3.5rem;" />
+            <MudText Typo="Typo.h5" Class="font-weight-bold mt-2" Color="Color.Primary">WMS Nusantara</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Sistem Manajemen Pergudangan Terpadu</MudText>
+        </div>
+
+        @if (!string.IsNullOrEmpty(ErrorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4" Variant="Variant.Filled" Dense="true">
+                @ErrorMessage
+            </MudAlert>
+        }
+
+        <form method="post" action="/account/login">
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+
+            <div class="mb-4">
+                <label class="mud-input-label mud-input-label-animated mb-1 d-block" style="font-size: 0.875rem; color: #475569;">Email atau Username</label>
+                <div class="mud-input mud-input-outlined mud-input-adorned-start">
+                    <input class="mud-input-slot mud-input-root mud-input-root-outlined"
+                           type="text"
+                           name="emailOrUsername"
+                           required
+                           autocomplete="username"
+                           placeholder="admin@wms.local"
+                           style="padding: 10.5px 14px;" />
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="mud-input-label mud-input-label-animated mb-1 d-block" style="font-size: 0.875rem; color: #475569;">Password</label>
+                <div class="mud-input mud-input-outlined mud-input-adorned-start">
+                    <input class="mud-input-slot mud-input-root mud-input-root-outlined"
+                           type="password"
+                           name="password"
+                           required
+                           autocomplete="current-password"
+                           placeholder="••••••••"
+                           style="padding: 10.5px 14px;" />
+                </div>
+            </div>
+
+            <div class="d-flex justify-space-between align-center mb-6">
+                <label style="font-size: 0.875rem; color: #475569; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" name="rememberMe" value="true" checked />
+                    <span>Ingat saya</span>
+                </label>
+            </div>
+
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large">
+                Masuk ke Sistem
+            </MudButton>
+        </form>
+
+        <MudDivider Class="my-6" />
+
+        <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Text">
+            <MudText Typo="Typo.caption">
+                <strong>Kredensial Demo (Tahap 1):</strong><br />
+                Email: <code>admin@wms.local</code><br />
+                Password: <code>Admin123!</code>
+            </MudText>
+        </MudAlert>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    private string? ErrorMessage => Error switch
+    {
+        "invalid_credentials" => "Username, email, atau password tidak valid.",
+        "locked_out" => "Akun terkunci sementara karena terlalu banyak percobaan gagal. Silakan tunggu 15 menit.",
+        "access_denied" => "Anda tidak memiliki hak akses untuk halaman tersebut.",
+        _ => null
+    };
+}

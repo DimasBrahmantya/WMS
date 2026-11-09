@@ -1,0 +1,753 @@
+@page "/master/warehouses"
+@attribute [Authorize]
+@inject IWarehouseService WarehouseService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Gudang & Lokasi Rak — WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="px-0 py-2 mb-2" />
+
+    <div class="d-flex flex-wrap justify-space-between align-center mb-4 gap-2">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Gudang & Lokasi Rak</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Kelola master fasilitas gudang dan tata letak rak penyimpanan</MudText>
+        </div>
+        <div>
+            @if (_activeTab == 0)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateWarehouseDialog">
+                    Tambah Gudang
+                </MudButton>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateLocationDialog">
+                    Tambah Lokasi Rak
+                </MudButton>
+            }
+        </div>
+    </div>
+
+    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4" @bind-ActivePanelIndex="_activeTab">
+        <!-- TAB 1: GUDANG -->
+        <MudTabPanel Text="Daftar Gudang" Icon="@Icons.Material.Filled.Warehouse">
+            <MudGrid Class="mb-3" Spacing="2">
+                <MudItem xs="12" sm="6" md="4">
+                    <MudTextField @bind-Value="_warehouseSearch"
+                                  Placeholder="Cari kode, nama, penanggung jawab..."
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  DebounceInterval="400"
+                                  OnDebounceIntervalElapsed="OnWarehouseSearchChanged"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="bool?" Value="_warehouseStatus" ValueChanged="OnWarehouseStatusChanged" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem T="bool?" Value="null">Semua Status</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="true">Aktif</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="false">Nonaktif</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <MudTable ServerData="LoadWarehousesServerData"
+                      @ref="_warehouseTable"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Elevation="0">
+                <HeaderContent>
+                    <MudTh><MudTableSortLabel SortLabel="code" T="WarehouseDto">Kode</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="name" T="WarehouseDto">Nama Gudang</MudTableSortLabel></MudTh>
+                    <MudTh>Penanggung Jawab</MudTh>
+                    <MudTh>Alamat</MudTh>
+                    <MudTh Style="text-align:center;">Jumlah Lokasi</MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="isactive" T="WarehouseDto">Status</MudTableSortLabel></MudTh>
+                    <MudTh Style="text-align:right;">Aksi</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Kode">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@context.Code</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Nama">
+                        <MudText Typo="Typo.body2" Class="font-weight-medium">@context.Name</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="PJ">@(string.IsNullOrWhiteSpace(context.ContactPerson) ? "-" : context.ContactPerson)</MudTd>
+                    <MudTd DataLabel="Alamat">
+                        <MudText Typo="Typo.body2" Class="text-muted text-truncate" Style="max-width: 250px;">@(string.IsNullOrWhiteSpace(context.Address) ? "-" : context.Address)</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Lokasi" Style="text-align:center;">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">@context.LocationCount Lokasi</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        @if (context.IsActive)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">Aktif</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">Nonaktif</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Aksi" Style="text-align:right;">
+                        <MudTooltip Text="Ubah">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Info" OnClick="@(() => OpenEditWarehouseDialog(context))" />
+                        </MudTooltip>
+                        <MudTooltip Text="@(context.IsActive ? "Nonaktifkan" : "Aktifkan")">
+                            <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.ToggleOn : Icons.Material.Filled.ToggleOff)"
+                                           Size="Size.Small"
+                                           Color="@(context.IsActive ? Color.Success : Color.Default)"
+                                           OnClick="@(() => ToggleWarehouseStatus(context))" />
+                        </MudTooltip>
+                        <MudTooltip Text="Hapus">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteWarehouse(context))" />
+                        </MudTooltip>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <div class="pa-8 text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.Warehouse" Size="Size.Large" Color="Color.Default" Class="mb-2" />
+                        <MudText Typo="Typo.body1" Color="Color.Secondary">Tidak ada gudang yang ditemukan atau Anda belum memiliki akses ke gudang.</MudText>
+                    </div>
+                </NoRecordsContent>
+                <LoadingContent>
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+                </LoadingContent>
+                <PagerContent>
+                    <MudTablePager RowsPerPageString="Baris per halaman:" InfoFormat="{first_item}-{last_item} dari {all_items}" PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                </PagerContent>
+            </MudTable>
+        </MudTabPanel>
+
+        <!-- TAB 2: LOKASI RAK -->
+        <MudTabPanel Text="Lokasi Rak" Icon="@Icons.Material.Filled.Layers">
+            <MudGrid Class="mb-3" Spacing="2">
+                <MudItem xs="12" sm="4" md="3">
+                    <MudSelect T="Guid?" Value="_locationWarehouseFilter" ValueChanged="OnLocationWarehouseFilterChanged" Label="Gudang" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem T="Guid?" Value="null">Semua Gudang</MudSelectItem>
+                        @foreach (var wh in _availableWarehouses)
+                        {
+                            <MudSelectItem T="Guid?" Value="@wh.Id">@wh.Name (@wh.Code)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="4" md="3">
+                    <MudTextField @bind-Value="_locationSearch"
+                                  Placeholder="Cari kode, nama, zona, lorong..."
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  DebounceInterval="400"
+                                  OnDebounceIntervalElapsed="OnLocationSearchChanged"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="4" md="2">
+                    <MudSelect T="bool?" Value="_locationStatus" ValueChanged="OnLocationStatusChanged" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem T="bool?" Value="null">Semua Status</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="true">Aktif</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="false">Nonaktif</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <MudTable ServerData="LoadLocationsServerData"
+                      @ref="_locationTable"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Elevation="0">
+                <HeaderContent>
+                    <MudTh>Gudang</MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="code" T="WarehouseLocationDto">Kode Lokasi</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="name" T="WarehouseLocationDto">Nama Lokasi</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="zone" T="WarehouseLocationDto">Zona</MudTableSortLabel></MudTh>
+                    <MudTh>Lorong / Rak / Bin</MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="isactive" T="WarehouseLocationDto">Status</MudTableSortLabel></MudTh>
+                    <MudTh Style="text-align:right;">Aksi</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Gudang">
+                        <MudText Typo="Typo.body2" Class="font-weight-medium">@context.WarehouseName</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.WarehouseCode</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Kode">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@context.Code</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Nama">@context.Name</MudTd>
+                    <MudTd DataLabel="Zona">@(string.IsNullOrWhiteSpace(context.Zone) ? "-" : context.Zone)</MudTd>
+                    <MudTd DataLabel="Hierarki">
+                        <MudText Typo="Typo.caption">
+                            Aisle: @(context.Aisle ?? "-") | Rak: @(context.Rack ?? "-") | Bin: @(context.Bin ?? "-")
+                        </MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        @if (context.IsActive)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">Aktif</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">Nonaktif</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Aksi" Style="text-align:right;">
+                        <MudTooltip Text="Ubah">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Info" OnClick="@(() => OpenEditLocationDialog(context))" />
+                        </MudTooltip>
+                        <MudTooltip Text="@(context.IsActive ? "Nonaktifkan" : "Aktifkan")">
+                            <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.ToggleOn : Icons.Material.Filled.ToggleOff)"
+                                           Size="Size.Small"
+                                           Color="@(context.IsActive ? Color.Success : Color.Default)"
+                                           OnClick="@(() => ToggleLocationStatus(context))" />
+                        </MudTooltip>
+                        <MudTooltip Text="Hapus">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteLocation(context))" />
+                        </MudTooltip>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <div class="pa-8 text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.Layers" Size="Size.Large" Color="Color.Default" Class="mb-2" />
+                        <MudText Typo="Typo.body1" Color="Color.Secondary">Tidak ada lokasi rak yang ditemukan.</MudText>
+                    </div>
+                </NoRecordsContent>
+                <LoadingContent>
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+                </LoadingContent>
+                <PagerContent>
+                    <MudTablePager RowsPerPageString="Baris per halaman:" InfoFormat="{first_item}-{last_item} dari {all_items}" PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                </PagerContent>
+            </MudTable>
+        </MudTabPanel>
+    </MudTabs>
+</MudContainer>
+
+<!-- Dialog Form Gudang -->
+<MudDialog @bind-Visible="_warehouseDialogVisible" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_isEditingWarehouse ? "Ubah Gudang" : "Tambah Gudang Baru")</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(_warehouseErrorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">@_warehouseErrorMessage</MudAlert>
+        }
+        <MudForm @ref="_warehouseForm" @bind-IsValid="_isWarehouseFormValid">
+            <MudTextField @bind-Value="_whCode"
+                          Label="Kode Gudang *"
+                          Placeholder="Contoh: GDG-JKT"
+                          Required="true"
+                          RequiredError="Kode gudang wajib diisi"
+                          MaxLength="50"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Class="mb-3" />
+
+            <MudTextField @bind-Value="_whName"
+                          Label="Nama Gudang *"
+                          Placeholder="Contoh: Gudang Utama Jakarta"
+                          Required="true"
+                          RequiredError="Nama gudang wajib diisi"
+                          MaxLength="200"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Class="mb-3" />
+
+            <MudTextField @bind-Value="_whContact"
+                          Label="Penanggung Jawab (Opsional)"
+                          MaxLength="100"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Class="mb-3" />
+
+            <MudTextField @bind-Value="_whAddress"
+                          Label="Alamat Gudang (Opsional)"
+                          Lines="3"
+                          MaxLength="500"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Class="mb-3" />
+
+            @if (_isEditingWarehouse)
+            {
+                <MudSwitch @bind-Value="_whIsActive" Label="Status Aktif" Color="Color.Primary" />
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _warehouseDialogVisible = false" Disabled="_isSubmittingWarehouse">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveWarehouse" Disabled="!_isWarehouseFormValid || _isSubmittingWarehouse">
+            @if (_isSubmittingWarehouse)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Menyimpan...</span>
+            }
+            else
+            {
+                <span>Simpan</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Dialog Form Lokasi Rak -->
+<MudDialog @bind-Visible="_locationDialogVisible" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_isEditingLocation ? "Ubah Lokasi Rak" : "Tambah Lokasi Rak Baru")</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(_locationErrorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">@_locationErrorMessage</MudAlert>
+        }
+        <MudForm @ref="_locationForm" @bind-IsValid="_isLocationFormValid">
+            @if (!_isEditingLocation)
+            {
+                <MudSelect T="Guid" @bind-Value="_locWarehouseId" Label="Gudang *" Required="true" RequiredError="Gudang wajib dipilih" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" AnchorOrigin="Origin.BottomCenter">
+                    @foreach (var wh in _availableWarehouses)
+                    {
+                        <MudSelectItem T="Guid" Value="@wh.Id">@wh.Name (@wh.Code)</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_locCode"
+                                  Label="Kode Lokasi *"
+                                  Placeholder="Contoh: A-01-01"
+                                  Required="true"
+                                  RequiredError="Kode lokasi wajib diisi"
+                                  MaxLength="50"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_locName"
+                                  Label="Nama Lokasi *"
+                                  Placeholder="Contoh: Rak Elektronik 1"
+                                  Required="true"
+                                  RequiredError="Nama lokasi wajib diisi"
+                                  MaxLength="100"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_locZone" Label="Zona (Opsional)" Placeholder="Misal: Zone A" MaxLength="50" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_locAisle" Label="Lorong / Aisle" Placeholder="Misal: 01" MaxLength="50" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_locRack" Label="Rak" Placeholder="Misal: 01" MaxLength="50" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_locBin" Label="Bin / Kotak" Placeholder="Misal: 01" MaxLength="50" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+            </MudGrid>
+
+            @if (_isEditingLocation)
+            {
+                <MudSwitch @bind-Value="_locIsActive" Label="Status Aktif" Color="Color.Primary" Class="mt-3" />
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _locationDialogVisible = false" Disabled="_isSubmittingLocation">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveLocation" Disabled="!_isLocationFormValid || _isSubmittingLocation">
+            @if (_isSubmittingLocation)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Menyimpan...</span>
+            }
+            else
+            {
+                <span>Simpan</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private int _activeTab;
+    private MudTable<WarehouseDto> _warehouseTable = null!;
+    private MudTable<WarehouseLocationDto> _locationTable = null!;
+
+    private string? _warehouseSearch;
+    private bool? _warehouseStatus;
+
+    private Guid? _locationWarehouseFilter;
+    private string? _locationSearch;
+    private bool? _locationStatus;
+
+    private IReadOnlyList<WarehouseDto> _availableWarehouses = new List<WarehouseDto>();
+
+    // Warehouse Dialog State
+    private bool _warehouseDialogVisible;
+    private bool _isEditingWarehouse;
+    private bool _isSubmittingWarehouse;
+    private bool _isWarehouseFormValid;
+    private string? _warehouseErrorMessage;
+    private MudForm _warehouseForm = null!;
+
+    private Guid _whCurrentId;
+    private string _whCode = string.Empty;
+    private string _whName = string.Empty;
+    private string? _whContact;
+    private string? _whAddress;
+    private bool _whIsActive = true;
+
+    // Location Dialog State
+    private bool _locationDialogVisible;
+    private bool _isEditingLocation;
+    private bool _isSubmittingLocation;
+    private bool _isLocationFormValid;
+    private string? _locationErrorMessage;
+    private MudForm _locationForm = null!;
+
+    private Guid _locCurrentId;
+    private Guid _locWarehouseId;
+    private string _locCode = string.Empty;
+    private string _locName = string.Empty;
+    private string? _locZone;
+    private string? _locAisle;
+    private string? _locRack;
+    private string? _locBin;
+    private bool _locIsActive = true;
+
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+
+    private readonly List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new("Dashboard", href: "/"),
+        new("Master Data", href: null, disabled: true),
+        new("Gudang & Lokasi Rak", href: null, disabled: true)
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAvailableWarehouses();
+    }
+
+    private async Task LoadAvailableWarehouses()
+    {
+        _availableWarehouses = await WarehouseService.GetActiveWarehousesAsync();
+    }
+
+    // Warehouse Table Operations
+    private async Task<TableData<WarehouseDto>> LoadWarehousesServerData(TableState state, CancellationToken token)
+    {
+        var query = new GetWarehousesQuery
+        {
+            Page = state.Page + 1,
+            PageSize = state.PageSize,
+            Search = _warehouseSearch,
+            IsActive = _warehouseStatus,
+            SortBy = state.SortLabel,
+            SortDescending = state.SortDirection == SortDirection.Descending
+        };
+
+        var result = await WarehouseService.GetWarehousesAsync(query, token);
+        return new TableData<WarehouseDto>
+        {
+            TotalItems = result.TotalCount,
+            Items = result.Items
+        };
+    }
+
+    private Task OnWarehouseSearchChanged(string search)
+    {
+        _warehouseSearch = search;
+        return _warehouseTable.ReloadServerData();
+    }
+
+    private Task OnWarehouseStatusChanged(bool? status)
+    {
+        _warehouseStatus = status;
+        return _warehouseTable.ReloadServerData();
+    }
+
+    private void OpenCreateWarehouseDialog()
+    {
+        _isEditingWarehouse = false;
+        _whCurrentId = Guid.Empty;
+        _whCode = string.Empty;
+        _whName = string.Empty;
+        _whContact = null;
+        _whAddress = null;
+        _whIsActive = true;
+        _warehouseErrorMessage = null;
+        _warehouseDialogVisible = true;
+    }
+
+    private void OpenEditWarehouseDialog(WarehouseDto wh)
+    {
+        _isEditingWarehouse = true;
+        _whCurrentId = wh.Id;
+        _whCode = wh.Code;
+        _whName = wh.Name;
+        _whContact = wh.ContactPerson;
+        _whAddress = wh.Address;
+        _whIsActive = wh.IsActive;
+        _warehouseErrorMessage = null;
+        _warehouseDialogVisible = true;
+    }
+
+    private async Task SaveWarehouse()
+    {
+        await _warehouseForm.Validate();
+        if (!_isWarehouseFormValid) return;
+
+        _isSubmittingWarehouse = true;
+        _warehouseErrorMessage = null;
+
+        try
+        {
+            if (_isEditingWarehouse)
+            {
+                var command = new UpdateWarehouseCommand(_whCurrentId, _whCode, _whName, _whAddress, _whContact, _whIsActive);
+                var result = await WarehouseService.UpdateWarehouseAsync(command);
+                if (result.Succeeded)
+                {
+                    Snackbar.Add("Gudang berhasil diperbarui.", Severity.Success);
+                    _warehouseDialogVisible = false;
+                    await _warehouseTable.ReloadServerData();
+                    await LoadAvailableWarehouses();
+                }
+                else
+                {
+                    _warehouseErrorMessage = result.ErrorMessage;
+                }
+            }
+            else
+            {
+                var command = new CreateWarehouseCommand(_whCode, _whName, _whAddress, _whContact);
+                var result = await WarehouseService.CreateWarehouseAsync(command);
+                if (result.Succeeded)
+                {
+                    Snackbar.Add("Gudang baru berhasil ditambahkan.", Severity.Success);
+                    _warehouseDialogVisible = false;
+                    await _warehouseTable.ReloadServerData();
+                    await LoadAvailableWarehouses();
+                }
+                else
+                {
+                    _warehouseErrorMessage = result.ErrorMessage;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _warehouseErrorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSubmittingWarehouse = false;
+        }
+    }
+
+    private async Task ToggleWarehouseStatus(WarehouseDto wh)
+    {
+        var result = await WarehouseService.ToggleWarehouseStatusAsync(wh.Id);
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Status gudang '{wh.Name}' berhasil diubah.", Severity.Success);
+            await _warehouseTable.ReloadServerData();
+            await LoadAvailableWarehouses();
+        }
+        else
+        {
+            Snackbar.Add(result.ErrorMessage ?? "Gagal mengubah status gudang.", Severity.Error);
+        }
+    }
+
+    private async Task DeleteWarehouse(WarehouseDto wh)
+    {
+        bool? confirmed = await DialogService.ShowMessageBox(
+            "Konfirmasi Hapus",
+            $"Apakah Anda yakin ingin menghapus gudang '{wh.Name}' ({wh.Code})?",
+            yesText: "Hapus", cancelText: "Batal");
+
+        if (confirmed == true)
+        {
+            var result = await WarehouseService.DeleteWarehouseAsync(wh.Id);
+            if (result.Succeeded)
+            {
+                Snackbar.Add("Gudang berhasil dihapus.", Severity.Success);
+                await _warehouseTable.ReloadServerData();
+                await LoadAvailableWarehouses();
+            }
+            else
+            {
+                Snackbar.Add(result.ErrorMessage ?? "Gudang tidak dapat dihapus.", Severity.Error);
+            }
+        }
+    }
+
+    // Location Table Operations
+    private async Task<TableData<WarehouseLocationDto>> LoadLocationsServerData(TableState state, CancellationToken token)
+    {
+        var query = new GetWarehouseLocationsQuery
+        {
+            Page = state.Page + 1,
+            PageSize = state.PageSize,
+            WarehouseId = _locationWarehouseFilter,
+            Search = _locationSearch,
+            IsActive = _locationStatus,
+            SortBy = state.SortLabel,
+            SortDescending = state.SortDirection == SortDirection.Descending
+        };
+
+        var result = await WarehouseService.GetLocationsAsync(query, token);
+        return new TableData<WarehouseLocationDto>
+        {
+            TotalItems = result.TotalCount,
+            Items = result.Items
+        };
+    }
+
+    private Task OnLocationSearchChanged(string search)
+    {
+        _locationSearch = search;
+        return _locationTable.ReloadServerData();
+    }
+
+    private Task OnLocationStatusChanged(bool? status)
+    {
+        _locationStatus = status;
+        return _locationTable.ReloadServerData();
+    }
+
+    private Task OnLocationWarehouseFilterChanged(Guid? warehouseId)
+    {
+        _locationWarehouseFilter = warehouseId;
+        return _locationTable.ReloadServerData();
+    }
+
+    private void OpenCreateLocationDialog()
+    {
+        _isEditingLocation = false;
+        _locCurrentId = Guid.Empty;
+        _locWarehouseId = _locationWarehouseFilter ?? (_availableWarehouses.FirstOrDefault()?.Id ?? Guid.Empty);
+        _locCode = string.Empty;
+        _locName = string.Empty;
+        _locZone = null;
+        _locAisle = null;
+        _locRack = null;
+        _locBin = null;
+        _locIsActive = true;
+        _locationErrorMessage = null;
+        _locationDialogVisible = true;
+    }
+
+    private void OpenEditLocationDialog(WarehouseLocationDto loc)
+    {
+        _isEditingLocation = true;
+        _locCurrentId = loc.Id;
+        _locWarehouseId = loc.WarehouseId;
+        _locCode = loc.Code;
+        _locName = loc.Name;
+        _locZone = loc.Zone;
+        _locAisle = loc.Aisle;
+        _locRack = loc.Rack;
+        _locBin = loc.Bin;
+        _locIsActive = loc.IsActive;
+        _locationErrorMessage = null;
+        _locationDialogVisible = true;
+    }
+
+    private async Task SaveLocation()
+    {
+        await _locationForm.Validate();
+        if (!_isLocationFormValid) return;
+
+        _isSubmittingLocation = true;
+        _locationErrorMessage = null;
+
+        try
+        {
+            if (_isEditingLocation)
+            {
+                var command = new UpdateWarehouseLocationCommand(_locCurrentId, _locCode, _locName, _locZone, _locAisle, _locRack, _locBin, _locIsActive);
+                var result = await WarehouseService.UpdateLocationAsync(command);
+                if (result.Succeeded)
+                {
+                    Snackbar.Add("Lokasi rak berhasil diperbarui.", Severity.Success);
+                    _locationDialogVisible = false;
+                    await _locationTable.ReloadServerData();
+                }
+                else
+                {
+                    _locationErrorMessage = result.ErrorMessage;
+                }
+            }
+            else
+            {
+                var command = new CreateWarehouseLocationCommand(_locWarehouseId, _locCode, _locName, _locZone, _locAisle, _locRack, _locBin);
+                var result = await WarehouseService.CreateLocationAsync(command);
+                if (result.Succeeded)
+                {
+                    Snackbar.Add("Lokasi rak baru berhasil ditambahkan.", Severity.Success);
+                    _locationDialogVisible = false;
+                    await _locationTable.ReloadServerData();
+                }
+                else
+                {
+                    _locationErrorMessage = result.ErrorMessage;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _locationErrorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSubmittingLocation = false;
+        }
+    }
+
+    private async Task ToggleLocationStatus(WarehouseLocationDto loc)
+    {
+        var result = await WarehouseService.ToggleLocationStatusAsync(loc.Id);
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Status lokasi '{loc.Code}' berhasil diubah.", Severity.Success);
+            await _locationTable.ReloadServerData();
+        }
+        else
+        {
+            Snackbar.Add(result.ErrorMessage ?? "Gagal mengubah status lokasi.", Severity.Error);
+        }
+    }
+
+    private async Task DeleteLocation(WarehouseLocationDto loc)
+    {
+        bool? confirmed = await DialogService.ShowMessageBox(
+            "Konfirmasi Hapus",
+            $"Apakah Anda yakin ingin menghapus lokasi rak '{loc.Code}' di gudang '{loc.WarehouseName}'?",
+            yesText: "Hapus", cancelText: "Batal");
+
+        if (confirmed == true)
+        {
+            var result = await WarehouseService.DeleteLocationAsync(loc.Id);
+            if (result.Succeeded)
+            {
+                Snackbar.Add("Lokasi rak berhasil dihapus.", Severity.Success);
+                await _locationTable.ReloadServerData();
+            }
+            else
+            {
+                Snackbar.Add(result.ErrorMessage ?? "Lokasi rak tidak dapat dihapus.", Severity.Error);
+            }
+        }
+    }
+}
+

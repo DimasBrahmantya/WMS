@@ -1,0 +1,15 @@
+D:\Dimas\Project Mini\WMS\src\Wms.Application\bin\Debug\net8.0\Wms.Application.deps.json
+D:\Dimas\Project Mini\WMS\src\Wms.Application\bin\Debug\net8.0\Wms.Application.dll
+D:\Dimas\Project Mini\WMS\src\Wms.Application\bin\Debug\net8.0\Wms.Application.pdb
+D:\Dimas\Project Mini\WMS\src\Wms.Application\bin\Debug\net8.0\Wms.Domain.dll
+D:\Dimas\Project Mini\WMS\src\Wms.Application\bin\Debug\net8.0\Wms.Domain.pdb
+D:\Dimas\Project Mini\WMS\src\Wms.Application\obj\Debug\net8.0\Wms.Application.csproj.AssemblyReference.cache
+D:\Dimas\Project Mini\WMS\src\Wms.Application\obj\Debug\net8.0\Wms.Application.GeneratedMSBuildEditorConfig.editorconfig
+D:\Dimas\Project Mini\WMS\src\Wms.Application\obj\Debug\net8.0\Wms.Application.AssemblyInfoInputs.cache
+D:\Dimas\Project Mini\WMS\src\Wms.Application\obj\Debug\net8.0\Wms.Application.AssemblyInfo.cs
+D:\Dimas\Project Mini\WMS\src\Wms.Application\obj\Debug\net8.0\Wms.Application.csproj.CoreCompileInputs.cache
+D:\Dimas\Project Mini\WMS\src\Wms.Application\obj\Debug\net8.0\Wms.Appl.D26CAE22.Up2Date
+D:\Dimas\Project Mini\WMS\src\Wms.Application\obj\Debug\net8.0\Wms.Application.dll
+D:\Dimas\Project Mini\WMS\src\Wms.Application\obj\Debug\net8.0\refint\Wms.Application.dll
+D:\Dimas\Project Mini\WMS\src\Wms.Application\obj\Debug\net8.0\Wms.Application.pdb
+D:\Dimas\Project Mini\WMS\src\Wms.Application\obj\Debug\net8.0\ref\Wms.Application.dll

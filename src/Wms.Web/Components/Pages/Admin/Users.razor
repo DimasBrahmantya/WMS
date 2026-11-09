@@ -1,0 +1,1038 @@
+@page "/admin/users"
+@attribute [Authorize(Roles = "SuperAdmin")]
+@inject IUserService UserService
+@inject IRoleService RoleService
+@inject IWarehouseService WarehouseService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Pengguna & Hak Akses — WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="px-0 py-2 mb-2" />
+
+    <div class="d-flex flex-wrap justify-space-between align-center mb-4 gap-2">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Pengguna & Hak Akses</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Kelola akun pengguna, peran sistem, izin akses modular, dan pembatasan gudang</MudText>
+        </div>
+        <div>
+            @if (_activeTab == 0)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="OpenCreateUserDialog">
+                    Tambah Pengguna
+                </MudButton>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Security" OnClick="OpenCreateRoleDialog">
+                    Tambah Peran Baru
+                </MudButton>
+            }
+        </div>
+    </div>
+
+    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4" @bind-ActivePanelIndex="_activeTab">
+        <!-- TAB 1: PENGGUNA -->
+        <MudTabPanel Text="Daftar Pengguna" Icon="@Icons.Material.Filled.People">
+            <MudGrid Class="mb-3" Spacing="2">
+                <MudItem xs="12" sm="5" md="4">
+                    <MudTextField @bind-Value="_userSearch"
+                                  Placeholder="Cari username, nama, email..."
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  DebounceInterval="400"
+                                  OnDebounceIntervalElapsed="OnUserSearchChanged"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="4" md="3">
+                    <MudSelect T="string" Value="_userRoleFilter" ValueChanged="OnUserRoleFilterChanged" Label="Peran (Role)" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem T="string" Value="null">Semua Peran</MudSelectItem>
+                        @foreach (var r in _availableRoles)
+                        {
+                            <MudSelectItem T="string" Value="@r.Name">@r.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="3" md="2">
+                    <MudSelect T="bool?" Value="_userStatus" ValueChanged="OnUserStatusChanged" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem T="bool?" Value="null">Semua Status</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="true">Aktif</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="false">Nonaktif</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <MudTable ServerData="LoadUsersServerData"
+                      @ref="_userTable"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Elevation="0">
+                <HeaderContent>
+                    <MudTh><MudTableSortLabel SortLabel="username" T="UserDetailDto">Username</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="fullname" T="UserDetailDto">Nama Lengkap</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="email" T="UserDetailDto">Email</MudTableSortLabel></MudTh>
+                    <MudTh>Peran (Roles)</MudTh>
+                    <MudTh>Gudang Diberi Izin</MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="isactive" T="UserDetailDto">Status</MudTableSortLabel></MudTh>
+                    <MudTh Style="text-align:right;">Aksi</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Username">
+                        <MudText Typo="Typo.body2" Class="font-weight-medium">@context.UserName</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Nama">@context.FullName</MudTd>
+                    <MudTd DataLabel="Email">@context.Email</MudTd>
+                    <MudTd DataLabel="Peran">
+                        @foreach (var role in context.Roles)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined" Class="mr-1 mb-1">@role</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Gudang">
+                        @if (context.WarehouseNames.Count == 0)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">Semua Gudang (Tanpa Pembatasan)</MudChip>
+                        }
+                        else
+                        {
+                            @foreach (var whName in context.WarehouseNames)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Outlined" Class="mr-1 mb-1">@whName</MudChip>
+                            }
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        @if (context.IsActive)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">Aktif</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">Nonaktif</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Aksi" Style="text-align:right;">
+                        <MudTooltip Text="Ubah Profil & Hak Akses">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Info" OnClick="@(() => OpenEditUserDialog(context))" />
+                        </MudTooltip>
+                        <MudTooltip Text="Reset Password">
+                            <MudIconButton Icon="@Icons.Material.Filled.LockReset" Size="Size.Small" Color="Color.Warning" OnClick="@(() => OpenResetPasswordDialog(context))" />
+                        </MudTooltip>
+                        <MudTooltip Text="@(context.IsActive ? "Nonaktifkan" : "Aktifkan")">
+                            <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.ToggleOn : Icons.Material.Filled.ToggleOff)"
+                                           Size="Size.Small"
+                                           Color="@(context.IsActive ? Color.Success : Color.Default)"
+                                           OnClick="@(() => ToggleUserStatus(context))" />
+                        </MudTooltip>
+                        <MudTooltip Text="Hapus">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteUser(context))" />
+                        </MudTooltip>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <div class="pa-8 text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.PersonOff" Size="Size.Large" Color="Color.Default" Class="mb-2" />
+                        <MudText Typo="Typo.body1" Color="Color.Secondary">Tidak ada pengguna yang ditemukan.</MudText>
+                    </div>
+                </NoRecordsContent>
+                <LoadingContent>
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+                </LoadingContent>
+                <PagerContent>
+                    <MudTablePager RowsPerPageString="Baris per halaman:" InfoFormat="{first_item}-{last_item} dari {all_items}" PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                </PagerContent>
+            </MudTable>
+        </MudTabPanel>
+
+        <!-- TAB 2: PERAN & IZIN -->
+        <MudTabPanel Text="Peran & Hak Akses" Icon="@Icons.Material.Filled.AdminPanelSettings">
+            <MudGrid Class="mb-3" Spacing="2">
+                <MudItem xs="12" sm="6" md="4">
+                    <MudTextField @bind-Value="_roleSearch"
+                                  Placeholder="Cari nama peran atau deskripsi..."
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  DebounceInterval="400"
+                                  OnDebounceIntervalElapsed="OnRoleSearchChanged"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Clearable="true" />
+                </MudItem>
+            </MudGrid>
+
+            <MudTable ServerData="LoadRolesServerData"
+                      @ref="_roleTable"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Elevation="0">
+                <HeaderContent>
+                    <MudTh><MudTableSortLabel SortLabel="name" T="RoleDetailDto">Nama Peran (Role)</MudTableSortLabel></MudTh>
+                    <MudTh>Deskripsi</MudTh>
+                    <MudTh Style="text-align:center;">Jumlah Pengguna</MudTh>
+                    <MudTh Style="text-align:center;">Jumlah Izin</MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="isactive" T="RoleDetailDto">Status</MudTableSortLabel></MudTh>
+                    <MudTh Style="text-align:right;">Aksi</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Nama Peran">
+                        <MudText Typo="Typo.body2" Class="font-weight-bold">@context.Name</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Deskripsi">@(context.Description ?? "-")</MudTd>
+                    <MudTd DataLabel="Pengguna" Style="text-align:center;">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">@context.UserCount User</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Izin" Style="text-align:center;">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@context.Permissions.Count Izin</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        @if (context.IsActive)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">Aktif</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">Nonaktif</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Aksi" Style="text-align:right;">
+                        <MudTooltip Text="Ubah Izin & Deskripsi">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Info" OnClick="@(() => OpenEditRoleDialog(context))" />
+                        </MudTooltip>
+                        <MudTooltip Text="@(context.IsActive ? "Nonaktifkan" : "Aktifkan")">
+                            <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.ToggleOn : Icons.Material.Filled.ToggleOff)"
+                                           Size="Size.Small"
+                                           Color="@(context.IsActive ? Color.Success : Color.Default)"
+                                           OnClick="@(() => ToggleRoleStatus(context))" />
+                        </MudTooltip>
+                        <MudTooltip Text="Hapus">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteRole(context))" />
+                        </MudTooltip>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <div class="pa-8 text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.Security" Size="Size.Large" Color="Color.Default" Class="mb-2" />
+                        <MudText Typo="Typo.body1" Color="Color.Secondary">Tidak ada peran yang ditemukan.</MudText>
+                    </div>
+                </NoRecordsContent>
+                <LoadingContent>
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+                </LoadingContent>
+                <PagerContent>
+                    <MudTablePager RowsPerPageString="Baris per halaman:" InfoFormat="{first_item}-{last_item} dari {all_items}" PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                </PagerContent>
+            </MudTable>
+        </MudTabPanel>
+    </MudTabs>
+</MudContainer>
+
+<!-- Dialog Form Tambah Pengguna -->
+<MudDialog @bind-Visible="_userCreateDialogVisible" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Tambah Pengguna Baru</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(_userErrorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">@_userErrorMessage</MudAlert>
+        }
+        <MudForm @ref="_userForm" @bind-IsValid="_isUserFormValid">
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_uUsername"
+                                  Label="Username *"
+                                  Placeholder="misal: budi_gudang"
+                                  Required="true"
+                                  RequiredError="Username wajib diisi"
+                                  MaxLength="50"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_uEmail"
+                                  Label="Email *"
+                                  Placeholder="budi@company.com"
+                                  Required="true"
+                                  RequiredError="Email wajib diisi"
+                                  MaxLength="100"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_uFullName"
+                                  Label="Nama Lengkap *"
+                                  Placeholder="Budi Santoso"
+                                  Required="true"
+                                  RequiredError="Nama lengkap wajib diisi"
+                                  MaxLength="200"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_uPhone"
+                                  Label="Nomor Telepon (Opsional)"
+                                  Placeholder="08123456789"
+                                  MaxLength="50"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_uPassword"
+                                  Label="Password Awal *"
+                                  InputType="InputType.Password"
+                                  Required="true"
+                                  RequiredError="Password awal wajib diisi"
+                                  HelperText="Minimal 8 karakter, huruf besar, huruf kecil, dan angka"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+
+                <!-- Roles Selection -->
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold mt-2">Pilih Peran (Role) *</MudText>
+                    <div class="d-flex flex-wrap gap-2 mt-1">
+                        @foreach (var r in _availableRoles)
+                        {
+                            <MudCheckBox T="bool"
+                                         Value="@(_uSelectedRoles.Contains(r.Name))"
+                                         ValueChanged="@((bool val) => OnRoleToggled(r.Name, val))"
+                                         Label="@r.Name"
+                                         Color="Color.Primary"
+                                         Dense="true" />
+                        }
+                    </div>
+                </MudItem>
+
+                <!-- Warehouse Assignment -->
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold mt-2">Batasan Akses Gudang</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-1">
+                        Pilih gudang yang diizinkan untuk pengguna ini. Jika tidak memilih apa pun, pengguna dapat mengakses semua gudang (berlaku default untuk SuperAdmin).
+                    </MudText>
+                    <div class="d-flex flex-wrap gap-2">
+                        @foreach (var wh in _availableWarehouses)
+                        {
+                            <MudCheckBox T="bool"
+                                         Value="@(_uSelectedWarehouseIds.Contains(wh.Id))"
+                                         ValueChanged="@((bool val) => OnWarehouseToggled(wh.Id, val))"
+                                         Label="@($"{wh.Name} ({wh.Code})")"
+                                         Color="Color.Secondary"
+                                         Dense="true" />
+                        }
+                    </div>
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _userCreateDialogVisible = false" Disabled="_isSubmittingUser">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveCreateUser" Disabled="!_isUserFormValid || _isSubmittingUser || _uSelectedRoles.Count == 0">
+            @if (_isSubmittingUser)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Menyimpan...</span>
+            }
+            else
+            {
+                <span>Simpan Pengguna</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Dialog Form Ubah Pengguna -->
+<MudDialog @bind-Visible="_userEditDialogVisible" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Ubah Profil Pengguna: @_uUsername</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(_userErrorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">@_userErrorMessage</MudAlert>
+        }
+        <MudForm @ref="_userEditForm" @bind-IsValid="_isUserFormValid">
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_uEmail"
+                                  Label="Email *"
+                                  Required="true"
+                                  RequiredError="Email wajib diisi"
+                                  MaxLength="100"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_uFullName"
+                                  Label="Nama Lengkap *"
+                                  Required="true"
+                                  RequiredError="Nama lengkap wajib diisi"
+                                  MaxLength="200"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_uPhone"
+                                  Label="Nomor Telepon"
+                                  MaxLength="50"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSwitch @bind-Value="_uIsActive" Label="Status Akun Aktif" Color="Color.Primary" Class="mt-2" />
+                </MudItem>
+
+                <!-- Roles Selection -->
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold mt-2">Pilih Peran (Role) *</MudText>
+                    <div class="d-flex flex-wrap gap-2 mt-1">
+                        @foreach (var r in _availableRoles)
+                        {
+                            <MudCheckBox T="bool"
+                                         Value="@(_uSelectedRoles.Contains(r.Name))"
+                                         ValueChanged="@((bool val) => OnRoleToggled(r.Name, val))"
+                                         Label="@r.Name"
+                                         Color="Color.Primary"
+                                         Dense="true" />
+                        }
+                    </div>
+                </MudItem>
+
+                <!-- Warehouse Assignment -->
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold mt-2">Batasan Akses Gudang</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-1">
+                        Pilih gudang yang diizinkan untuk pengguna ini. Kosongkan untuk akses tanpa pembatasan.
+                    </MudText>
+                    <div class="d-flex flex-wrap gap-2">
+                        @foreach (var wh in _availableWarehouses)
+                        {
+                            <MudCheckBox T="bool"
+                                         Value="@(_uSelectedWarehouseIds.Contains(wh.Id))"
+                                         ValueChanged="@((bool val) => OnWarehouseToggled(wh.Id, val))"
+                                         Label="@($"{wh.Name} ({wh.Code})")"
+                                         Color="Color.Secondary"
+                                         Dense="true" />
+                        }
+                    </div>
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _userEditDialogVisible = false" Disabled="_isSubmittingUser">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveEditUser" Disabled="!_isUserFormValid || _isSubmittingUser || _uSelectedRoles.Count == 0">
+            @if (_isSubmittingUser)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Menyimpan...</span>
+            }
+            else
+            {
+                <span>Simpan Perubahan</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Dialog Reset Password -->
+<MudDialog @bind-Visible="_resetPasswordDialogVisible" Options="_smallDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Reset Password: @_uUsername</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(_userErrorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">@_userErrorMessage</MudAlert>
+        }
+        <MudTextField @bind-Value="_uNewPassword"
+                      Label="Password Baru *"
+                      InputType="InputType.Password"
+                      Required="true"
+                      HelperText="Minimal 8 karakter, huruf besar, huruf kecil, dan angka"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Class="mt-2" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _resetPasswordDialogVisible = false" Disabled="_isSubmittingUser">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Warning" OnClick="SaveResetPassword" Disabled="_isSubmittingUser || string.IsNullOrWhiteSpace(_uNewPassword)">
+            Reset Password
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Dialog Form Peran (Role) -->
+<MudDialog @bind-Visible="_roleDialogVisible" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_isEditingRole ? $"Ubah Peran: {_roleName}" : "Tambah Peran Baru")</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(_roleErrorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">@_roleErrorMessage</MudAlert>
+        }
+        <MudForm @ref="_roleForm" @bind-IsValid="_isRoleFormValid">
+            @if (!_isEditingRole)
+            {
+                <MudTextField @bind-Value="_roleName"
+                              Label="Nama Peran (Role) *"
+                              Placeholder="misal: PetugasQualityControl"
+                              Required="true"
+                              RequiredError="Nama peran wajib diisi"
+                              MaxLength="100"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Class="mb-3" />
+            }
+
+            <MudTextField @bind-Value="_roleDescription"
+                          Label="Deskripsi Peran (Opsional)"
+                          Lines="2"
+                          MaxLength="500"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Class="mb-3" />
+
+            @if (_isEditingRole)
+            {
+                <MudSwitch @bind-Value="_roleIsActive" Label="Status Peran Aktif" Color="Color.Primary" Class="mb-3" />
+            }
+
+            <!-- Permission Checkbox Matrix -->
+            <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">Pilih Hak Akses (Permissions)</MudText>
+            <div style="max-height: 350px; overflow-y: auto;" class="border rounded pa-3">
+                @foreach (var group in _permissionGroups)
+                {
+                    <MudText Typo="Typo.caption" Class="font-weight-bold text-uppercase d-block mt-2 mb-1" Color="Color.Primary">@group.Key</MudText>
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                        @foreach (var perm in group.Value)
+                        {
+                            <MudCheckBox T="bool"
+                                         Value="@(_roleSelectedPermissions.Contains(perm))"
+                                         ValueChanged="@((bool val) => OnPermissionToggled(perm, val))"
+                                         Label="@perm"
+                                         Color="Color.Primary"
+                                         Dense="true" />
+                        }
+                    </div>
+                    <MudDivider Class="my-2" />
+                }
+            </div>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _roleDialogVisible = false" Disabled="_isSubmittingRole">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveRole" Disabled="!_isRoleFormValid || _isSubmittingRole">
+            @if (_isSubmittingRole)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Menyimpan...</span>
+            }
+            else
+            {
+                <span>Simpan Peran</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private int _activeTab;
+    private MudTable<UserDetailDto> _userTable = null!;
+    private MudTable<RoleDetailDto> _roleTable = null!;
+
+    private string? _userSearch;
+    private string? _userRoleFilter;
+    private bool? _userStatus;
+
+    private string? _roleSearch;
+
+    private IReadOnlyList<RoleDetailDto> _availableRoles = new List<RoleDetailDto>();
+    private IReadOnlyList<WarehouseDto> _availableWarehouses = new List<WarehouseDto>();
+
+    // User Dialogs state
+    private bool _userCreateDialogVisible;
+    private bool _userEditDialogVisible;
+    private bool _resetPasswordDialogVisible;
+    private bool _isSubmittingUser;
+    private bool _isUserFormValid;
+    private string? _userErrorMessage;
+    private MudForm _userForm = null!;
+    private MudForm _userEditForm = null!;
+
+    private Guid _uId;
+    private string _uUsername = string.Empty;
+    private string _uEmail = string.Empty;
+    private string _uFullName = string.Empty;
+    private string? _uPhone;
+    private string _uPassword = string.Empty;
+    private string _uNewPassword = string.Empty;
+    private bool _uIsActive = true;
+    private List<string> _uSelectedRoles = new();
+    private List<Guid> _uSelectedWarehouseIds = new();
+
+    // Role Dialog state
+    private bool _roleDialogVisible;
+    private bool _isEditingRole;
+    private bool _isSubmittingRole;
+    private bool _isRoleFormValid;
+    private string? _roleErrorMessage;
+    private MudForm _roleForm = null!;
+
+    private Guid _roleId;
+    private string _roleName = string.Empty;
+    private string? _roleDescription;
+    private bool _roleIsActive = true;
+    private List<string> _roleSelectedPermissions = new();
+
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+    private readonly DialogOptions _smallDialogOptions = new() { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseButton = true };
+
+    private readonly List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new("Dashboard", href: "/"),
+        new("Administrasi", href: null, disabled: true),
+        new("Pengguna & Hak Akses", href: null, disabled: true)
+    };
+
+    private readonly Dictionary<string, List<string>> _permissionGroups = new()
+    {
+        ["Pengguna & Role"] = new()
+        {
+            Permissions.UsersView, Permissions.UsersCreate, Permissions.UsersEdit, Permissions.UsersDelete,
+            Permissions.RolesView, Permissions.RolesEdit
+        },
+        ["Master Data"] = new()
+        {
+            Permissions.MasterWarehouseView, Permissions.MasterWarehouseManage,
+            Permissions.MasterProductView, Permissions.MasterProductManage,
+            Permissions.MasterCategoryManage, Permissions.MasterUnitManage,
+            Permissions.MasterSupplierManage, Permissions.MasterCustomerManage
+        },
+        ["Transaksi Stok (Fase 1)"] = new()
+        {
+            Permissions.StockInView, Permissions.StockInCreate, Permissions.StockInPost, Permissions.StockInReverse,
+            Permissions.StockOutView, Permissions.StockOutCreate, Permissions.StockOutPost, Permissions.StockOutReverse
+        },
+        ["Workflow Operasional (Fase 2)"] = new()
+        {
+            Permissions.PurchaseOrderView, Permissions.PurchaseOrderCreate, Permissions.PurchaseOrderApprove,
+            Permissions.StockTransferView, Permissions.StockTransferCreate, Permissions.StockTransferApprove,
+            Permissions.StockOpnameView, Permissions.StockOpnameManage, Permissions.StockOpnameApprove,
+            Permissions.StockIncidentView, Permissions.StockIncidentManage, Permissions.StockIncidentApprove,
+            Permissions.StockReturnView, Permissions.StockReturnCreate, Permissions.StockReturnApprove
+        },
+        ["Laporan, Audit & Pengaturan"] = new()
+        {
+            Permissions.ReportsView, Permissions.ReportsExport, Permissions.AuditView, Permissions.SettingsManage
+        }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDependencies();
+    }
+
+    private async Task LoadDependencies()
+    {
+        _availableRoles = await RoleService.GetActiveRolesAsync();
+        _availableWarehouses = await WarehouseService.GetActiveWarehousesAsync();
+    }
+
+    // User Operations
+    private async Task<TableData<UserDetailDto>> LoadUsersServerData(TableState state, CancellationToken token)
+    {
+        var query = new GetUsersQuery
+        {
+            Page = state.Page + 1,
+            PageSize = state.PageSize,
+            Search = _userSearch,
+            Role = _userRoleFilter,
+            IsActive = _userStatus,
+            SortBy = state.SortLabel,
+            SortDescending = state.SortDirection == SortDirection.Descending
+        };
+
+        var result = await UserService.GetUsersAsync(query, token);
+        return new TableData<UserDetailDto>
+        {
+            TotalItems = result.TotalCount,
+            Items = result.Items
+        };
+    }
+
+    private Task OnUserSearchChanged(string search)
+    {
+        _userSearch = search;
+        return _userTable.ReloadServerData();
+    }
+
+    private Task OnUserRoleFilterChanged(string role)
+    {
+        _userRoleFilter = role;
+        return _userTable.ReloadServerData();
+    }
+
+    private Task OnUserStatusChanged(bool? status)
+    {
+        _userStatus = status;
+        return _userTable.ReloadServerData();
+    }
+
+    private void OnRoleToggled(string roleName, bool isChecked)
+    {
+        if (isChecked && !_uSelectedRoles.Contains(roleName))
+            _uSelectedRoles.Add(roleName);
+        else if (!isChecked && _uSelectedRoles.Contains(roleName))
+            _uSelectedRoles.Remove(roleName);
+    }
+
+    private void OnWarehouseToggled(Guid warehouseId, bool isChecked)
+    {
+        if (isChecked && !_uSelectedWarehouseIds.Contains(warehouseId))
+            _uSelectedWarehouseIds.Add(warehouseId);
+        else if (!isChecked && _uSelectedWarehouseIds.Contains(warehouseId))
+            _uSelectedWarehouseIds.Remove(warehouseId);
+    }
+
+    private void OpenCreateUserDialog()
+    {
+        _uId = Guid.Empty;
+        _uUsername = string.Empty;
+        _uEmail = string.Empty;
+        _uFullName = string.Empty;
+        _uPhone = null;
+        _uPassword = string.Empty;
+        _uSelectedRoles = new List<string> { "PetugasGudang" };
+        _uSelectedWarehouseIds = new List<Guid>();
+        _userErrorMessage = null;
+        _userCreateDialogVisible = true;
+    }
+
+    private void OpenEditUserDialog(UserDetailDto user)
+    {
+        _uId = user.Id;
+        _uUsername = user.UserName;
+        _uEmail = user.Email;
+        _uFullName = user.FullName;
+        _uPhone = user.PhoneNumber;
+        _uIsActive = user.IsActive;
+        _uSelectedRoles = user.Roles.ToList();
+        _uSelectedWarehouseIds = user.WarehouseIds.ToList();
+        _userErrorMessage = null;
+        _userEditDialogVisible = true;
+    }
+
+    private void OpenResetPasswordDialog(UserDetailDto user)
+    {
+        _uId = user.Id;
+        _uUsername = user.UserName;
+        _uNewPassword = string.Empty;
+        _userErrorMessage = null;
+        _resetPasswordDialogVisible = true;
+    }
+
+    private async Task SaveCreateUser()
+    {
+        await _userForm.Validate();
+        if (!_isUserFormValid) return;
+
+        _isSubmittingUser = true;
+        _userErrorMessage = null;
+
+        try
+        {
+            var command = new CreateUserCommand(
+                _uUsername,
+                _uEmail,
+                _uFullName,
+                _uPhone,
+                _uPassword,
+                _uSelectedRoles,
+                _uSelectedWarehouseIds);
+
+            var result = await UserService.CreateUserAsync(command);
+            if (result.Succeeded)
+            {
+                Snackbar.Add("Pengguna baru berhasil ditambahkan.", Severity.Success);
+                _userCreateDialogVisible = false;
+                await _userTable.ReloadServerData();
+            }
+            else
+            {
+                _userErrorMessage = result.ErrorMessage;
+            }
+        }
+        catch (Exception ex)
+        {
+            _userErrorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSubmittingUser = false;
+        }
+    }
+
+    private async Task SaveEditUser()
+    {
+        await _userEditForm.Validate();
+        if (!_isUserFormValid) return;
+
+        _isSubmittingUser = true;
+        _userErrorMessage = null;
+
+        try
+        {
+            var command = new UpdateUserCommand(
+                _uId,
+                _uEmail,
+                _uFullName,
+                _uPhone,
+                _uIsActive,
+                _uSelectedRoles,
+                _uSelectedWarehouseIds);
+
+            var result = await UserService.UpdateUserAsync(command);
+            if (result.Succeeded)
+            {
+                Snackbar.Add("Profil pengguna berhasil diperbarui.", Severity.Success);
+                _userEditDialogVisible = false;
+                await _userTable.ReloadServerData();
+            }
+            else
+            {
+                _userErrorMessage = result.ErrorMessage;
+            }
+        }
+        catch (Exception ex)
+        {
+            _userErrorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSubmittingUser = false;
+        }
+    }
+
+    private async Task SaveResetPassword()
+    {
+        _isSubmittingUser = true;
+        _userErrorMessage = null;
+
+        try
+        {
+            var command = new ChangeUserPasswordCommand(_uId, _uNewPassword);
+            var result = await UserService.ResetPasswordAsync(command);
+            if (result.Succeeded)
+            {
+                Snackbar.Add($"Password untuk pengguna '{_uUsername}' berhasil direset.", Severity.Success);
+                _resetPasswordDialogVisible = false;
+            }
+            else
+            {
+                _userErrorMessage = result.ErrorMessage;
+            }
+        }
+        catch (Exception ex)
+        {
+            _userErrorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSubmittingUser = false;
+        }
+    }
+
+    private async Task ToggleUserStatus(UserDetailDto user)
+    {
+        var result = await UserService.ToggleUserStatusAsync(user.Id);
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Status akun '{user.UserName}' berhasil diubah.", Severity.Success);
+            await _userTable.ReloadServerData();
+        }
+        else
+        {
+            Snackbar.Add(result.ErrorMessage ?? "Gagal mengubah status akun.", Severity.Error);
+        }
+    }
+
+    private async Task DeleteUser(UserDetailDto user)
+    {
+        bool? confirmed = await DialogService.ShowMessageBox(
+            "Konfirmasi Hapus",
+            $"Apakah Anda yakin ingin menghapus akun pengguna '{user.UserName}'?",
+            yesText: "Hapus", cancelText: "Batal");
+
+        if (confirmed == true)
+        {
+            var result = await UserService.DeleteUserAsync(user.Id);
+            if (result.Succeeded)
+            {
+                Snackbar.Add("Pengguna berhasil dihapus.", Severity.Success);
+                await _userTable.ReloadServerData();
+            }
+            else
+            {
+                Snackbar.Add(result.ErrorMessage ?? "Pengguna tidak dapat dihapus.", Severity.Error);
+            }
+        }
+    }
+
+    // Role Operations
+    private async Task<TableData<RoleDetailDto>> LoadRolesServerData(TableState state, CancellationToken token)
+    {
+        var query = new GetRolesQuery
+        {
+            Page = state.Page + 1,
+            PageSize = state.PageSize,
+            Search = _roleSearch,
+            SortBy = state.SortLabel,
+            SortDescending = state.SortDirection == SortDirection.Descending
+        };
+
+        var result = await RoleService.GetRolesAsync(query, token);
+        return new TableData<RoleDetailDto>
+        {
+            TotalItems = result.TotalCount,
+            Items = result.Items
+        };
+    }
+
+    private Task OnRoleSearchChanged(string search)
+    {
+        _roleSearch = search;
+        return _roleTable.ReloadServerData();
+    }
+
+    private void OnPermissionToggled(string perm, bool isChecked)
+    {
+        if (isChecked && !_roleSelectedPermissions.Contains(perm))
+            _roleSelectedPermissions.Add(perm);
+        else if (!isChecked && _roleSelectedPermissions.Contains(perm))
+            _roleSelectedPermissions.Remove(perm);
+    }
+
+    private void OpenCreateRoleDialog()
+    {
+        _isEditingRole = false;
+        _roleId = Guid.Empty;
+        _roleName = string.Empty;
+        _roleDescription = null;
+        _roleIsActive = true;
+        _roleSelectedPermissions = new List<string>();
+        _roleErrorMessage = null;
+        _roleDialogVisible = true;
+    }
+
+    private void OpenEditRoleDialog(RoleDetailDto role)
+    {
+        _isEditingRole = true;
+        _roleId = role.Id;
+        _roleName = role.Name;
+        _roleDescription = role.Description;
+        _roleIsActive = role.IsActive;
+        _roleSelectedPermissions = role.Permissions.ToList();
+        _roleErrorMessage = null;
+        _roleDialogVisible = true;
+    }
+
+    private async Task SaveRole()
+    {
+        await _roleForm.Validate();
+        if (!_isRoleFormValid) return;
+
+        _isSubmittingRole = true;
+        _roleErrorMessage = null;
+
+        try
+        {
+            if (_isEditingRole)
+            {
+                var command = new UpdateRoleCommand(_roleId, _roleDescription, _roleIsActive, _roleSelectedPermissions);
+                var result = await RoleService.UpdateRoleAsync(command);
+                if (result.Succeeded)
+                {
+                    Snackbar.Add("Peran dan izin berhasil diperbarui.", Severity.Success);
+                    _roleDialogVisible = false;
+                    await _roleTable.ReloadServerData();
+                    await LoadDependencies();
+                }
+                else
+                {
+                    _roleErrorMessage = result.ErrorMessage;
+                }
+            }
+            else
+            {
+                var command = new CreateRoleCommand(_roleName, _roleDescription, _roleSelectedPermissions);
+                var result = await RoleService.CreateRoleAsync(command);
+                if (result.Succeeded)
+                {
+                    Snackbar.Add("Peran baru berhasil ditambahkan.", Severity.Success);
+                    _roleDialogVisible = false;
+                    await _roleTable.ReloadServerData();
+                    await LoadDependencies();
+                }
+                else
+                {
+                    _roleErrorMessage = result.ErrorMessage;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _roleErrorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSubmittingRole = false;
+        }
+    }
+
+    private async Task ToggleRoleStatus(RoleDetailDto role)
+    {
+        var result = await RoleService.ToggleRoleStatusAsync(role.Id);
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Status peran '{role.Name}' berhasil diubah.", Severity.Success);
+            await _roleTable.ReloadServerData();
+            await LoadDependencies();
+        }
+        else
+        {
+            Snackbar.Add(result.ErrorMessage ?? "Gagal mengubah status peran.", Severity.Error);
+        }
+    }
+
+    private async Task DeleteRole(RoleDetailDto role)
+    {
+        bool? confirmed = await DialogService.ShowMessageBox(
+            "Konfirmasi Hapus",
+            $"Apakah Anda yakin ingin menghapus peran '{role.Name}'?",
+            yesText: "Hapus", cancelText: "Batal");
+
+        if (confirmed == true)
+        {
+            var result = await RoleService.DeleteRoleAsync(role.Id);
+            if (result.Succeeded)
+            {
+                Snackbar.Add("Peran berhasil dihapus.", Severity.Success);
+                await _roleTable.ReloadServerData();
+                await LoadDependencies();
+            }
+            else
+            {
+                Snackbar.Add(result.ErrorMessage ?? "Peran tidak dapat dihapus.", Severity.Error);
+            }
+        }
+    }
+}
+

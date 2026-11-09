@@ -1,0 +1,341 @@
+@page "/master/categories"
+@attribute [Authorize]
+@inject ICategoryService CategoryService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Kategori Barang — WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="px-0 py-2 mb-2" />
+
+    <div class="d-flex flex-wrap justify-space-between align-center mb-4 gap-2">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Kategori Barang</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Kelola data pengelompokan barang dan persediaan</MudText>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+            Tambah Kategori
+        </MudButton>
+    </div>
+
+    <MudCard Elevation="2">
+        <MudCardContent Class="pa-4">
+            <!-- Filter Bar -->
+            <MudGrid Class="mb-3" Spacing="2">
+                <MudItem xs="12" sm="6" md="4">
+                    <MudTextField @bind-Value="_searchString"
+                                  Placeholder="Cari nama atau deskripsi..."
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  DebounceInterval="400"
+                                  OnDebounceIntervalElapsed="OnSearchChanged"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="bool?" Value="_selectedStatus" ValueChanged="OnStatusChanged" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem T="bool?" Value="null">Semua Status</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="true">Aktif</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="false">Nonaktif</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <!-- Table -->
+            <MudTable ServerData="LoadServerData"
+                      @ref="_table"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Bordered="false"
+                      Elevation="0">
+                <HeaderContent>
+                    <MudTh><MudTableSortLabel SortLabel="name" T="CategoryDto">Nama Kategori</MudTableSortLabel></MudTh>
+                    <MudTh>Deskripsi</MudTh>
+                    <MudTh Style="text-align:center;">Jumlah Produk</MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="isactive" T="CategoryDto">Status</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel SortLabel="createdatutc" T="CategoryDto">Dibuat Pada</MudTableSortLabel></MudTh>
+                    <MudTh Style="text-align:right;">Aksi</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Nama">
+                        <MudText Typo="Typo.body2" Class="font-weight-medium">@context.Name</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Deskripsi">
+                        <MudText Typo="Typo.body2" Class="text-muted">@(string.IsNullOrWhiteSpace(context.Description) ? "-" : context.Description)</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Jumlah Produk" Style="text-align:center;">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">@context.ProductCount SKU</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        @if (context.IsActive)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">Aktif</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">Nonaktif</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Dibuat">
+                        @context.CreatedAtUtc.AddHours(7).ToString("dd/MM/yyyy HH:mm")
+                    </MudTd>
+                    <MudTd DataLabel="Aksi" Style="text-align:right;">
+                        <MudTooltip Text="Ubah">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Info" OnClick="@(() => OpenEditDialog(context))" />
+                        </MudTooltip>
+                        <MudTooltip Text="@(context.IsActive ? "Nonaktifkan" : "Aktifkan")">
+                            <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.ToggleOn : Icons.Material.Filled.ToggleOff)"
+                                           Size="Size.Small"
+                                           Color="@(context.IsActive ? Color.Success : Color.Default)"
+                                           OnClick="@(() => ToggleStatus(context))" />
+                        </MudTooltip>
+                        <MudTooltip Text="Hapus">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteCategory(context))" />
+                        </MudTooltip>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <div class="pa-8 text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.Category" Size="Size.Large" Color="Color.Default" Class="mb-2" />
+                        <MudText Typo="Typo.body1" Color="Color.Secondary">Tidak ada kategori yang ditemukan.</MudText>
+                    </div>
+                </NoRecordsContent>
+                <LoadingContent>
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+                </LoadingContent>
+                <PagerContent>
+                    <MudTablePager RowsPerPageString="Baris per halaman:" InfoFormat="{first_item}-{last_item} dari {all_items}" PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                </PagerContent>
+            </MudTable>
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
+
+<!-- Dialog Form Kategori -->
+<MudDialog @bind-Visible="_dialogVisible" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_isEditing ? "Ubah Kategori" : "Tambah Kategori Baru")</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">@_errorMessage</MudAlert>
+        }
+        <MudForm @ref="_form" @bind-IsValid="_isFormValid">
+            <MudTextField @bind-Value="_formName"
+                          Label="Nama Kategori *"
+                          Required="true"
+                          RequiredError="Nama kategori wajib diisi"
+                          MaxLength="100"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Class="mb-3" />
+
+            <MudTextField @bind-Value="_formDescription"
+                          Label="Deskripsi (Opsional)"
+                          Lines="3"
+                          MaxLength="500"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Class="mb-3" />
+
+            @if (_isEditing)
+            {
+                <MudSwitch @bind-Value="_formIsActive" Label="Status Aktif" Color="Color.Primary" />
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseDialog" Disabled="_isSubmitting">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveCategory" Disabled="!_isFormValid || _isSubmitting">
+            @if (_isSubmitting)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Menyimpan...</span>
+            }
+            else
+            {
+                <span>Simpan</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private MudTable<CategoryDto> _table = null!;
+    private string? _searchString;
+    private bool? _selectedStatus;
+
+    private bool _dialogVisible;
+    private bool _isEditing;
+    private bool _isSubmitting;
+    private bool _isFormValid;
+    private string? _errorMessage;
+    private MudForm _form = null!;
+
+    private Guid _currentId;
+    private string _formName = string.Empty;
+    private string? _formDescription;
+    private bool _formIsActive = true;
+
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+
+    private readonly List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new("Dashboard", href: "/"),
+        new("Master Data", href: null, disabled: true),
+        new("Kategori Barang", href: null, disabled: true)
+    };
+
+    private async Task<TableData<CategoryDto>> LoadServerData(TableState state, CancellationToken token)
+    {
+        var query = new GetCategoriesQuery
+        {
+            Page = state.Page + 1,
+            PageSize = state.PageSize,
+            Search = _searchString,
+            IsActive = _selectedStatus,
+            SortBy = state.SortLabel,
+            SortDescending = state.SortDirection == SortDirection.Descending
+        };
+
+        var result = await CategoryService.GetCategoriesAsync(query, token);
+        return new TableData<CategoryDto>
+        {
+            TotalItems = result.TotalCount,
+            Items = result.Items
+        };
+    }
+
+    private Task OnSearchChanged(string search)
+    {
+        _searchString = search;
+        return _table.ReloadServerData();
+    }
+
+    private Task OnStatusChanged(bool? status)
+    {
+        _selectedStatus = status;
+        return _table.ReloadServerData();
+    }
+
+    private void OpenCreateDialog()
+    {
+        _isEditing = false;
+        _currentId = Guid.Empty;
+        _formName = string.Empty;
+        _formDescription = null;
+        _formIsActive = true;
+        _errorMessage = null;
+        _dialogVisible = true;
+    }
+
+    private void OpenEditDialog(CategoryDto category)
+    {
+        _isEditing = true;
+        _currentId = category.Id;
+        _formName = category.Name;
+        _formDescription = category.Description;
+        _formIsActive = category.IsActive;
+        _errorMessage = null;
+        _dialogVisible = true;
+    }
+
+    private void CloseDialog()
+    {
+        _dialogVisible = false;
+        _errorMessage = null;
+    }
+
+    private async Task SaveCategory()
+    {
+        await _form.Validate();
+        if (!_isFormValid) return;
+
+        _isSubmitting = true;
+        _errorMessage = null;
+
+        try
+        {
+            if (_isEditing)
+            {
+                var command = new UpdateCategoryCommand(_currentId, _formName, _formDescription, _formIsActive);
+                var result = await CategoryService.UpdateCategoryAsync(command);
+                if (result.Succeeded)
+                {
+                    Snackbar.Add("Kategori berhasil diperbarui.", Severity.Success);
+                    _dialogVisible = false;
+                    await _table.ReloadServerData();
+                }
+                else
+                {
+                    _errorMessage = result.ErrorMessage;
+                }
+            }
+            else
+            {
+                var command = new CreateCategoryCommand(_formName, _formDescription);
+                var result = await CategoryService.CreateCategoryAsync(command);
+                if (result.Succeeded)
+                {
+                    Snackbar.Add("Kategori baru berhasil ditambahkan.", Severity.Success);
+                    _dialogVisible = false;
+                    await _table.ReloadServerData();
+                }
+                else
+                {
+                    _errorMessage = result.ErrorMessage;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task ToggleStatus(CategoryDto category)
+    {
+        var result = await CategoryService.ToggleCategoryStatusAsync(category.Id);
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Status kategori '{category.Name}' berhasil diubah.", Severity.Success);
+            await _table.ReloadServerData();
+        }
+        else
+        {
+            Snackbar.Add(result.ErrorMessage ?? "Gagal mengubah status kategori.", Severity.Error);
+        }
+    }
+
+    private async Task DeleteCategory(CategoryDto category)
+    {
+        bool? confirmed = await DialogService.ShowMessageBox(
+            "Konfirmasi Hapus",
+            $"Apakah Anda yakin ingin menghapus kategori '{category.Name}'?",
+            yesText: "Hapus", cancelText: "Batal");
+
+        if (confirmed == true)
+        {
+            var result = await CategoryService.DeleteCategoryAsync(category.Id);
+            if (result.Succeeded)
+            {
+                Snackbar.Add("Kategori berhasil dihapus.", Severity.Success);
+                await _table.ReloadServerData();
+            }
+            else
+            {
+                Snackbar.Add(result.ErrorMessage ?? "Kategori tidak dapat dihapus.", Severity.Error);
+            }
+        }
+    }
+}
+

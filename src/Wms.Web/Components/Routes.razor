@@ -1,0 +1,39 @@
+<CascadingAuthenticationState>
+    <Router AppAssembly="typeof(Program).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+                <NotAuthorized>
+                    <LayoutView Layout="typeof(Layout.MainLayout)">
+                        <MudContainer MaxWidth="MaxWidth.Small" Class="mt-16 text-center">
+                            <MudPaper Class="pa-8">
+                                <MudIcon Icon="@Icons.Material.Filled.Lock" Color="Color.Error" Size="Size.Large" Class="mb-4" />
+                                <MudText Typo="Typo.h5" GutterBottom="true">Akses Ditolak</MudText>
+                                <MudText Typo="Typo.body1" Class="mb-6">Anda tidak memiliki hak akses untuk membuka halaman ini.</MudText>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/login">Login Kembali</MudButton>
+                            </MudPaper>
+                        </MudContainer>
+                    </LayoutView>
+                </NotAuthorized>
+                <Authorizing>
+                    <MudContainer MaxWidth="MaxWidth.Small" Class="mt-16 text-center">
+                        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                        <MudText Typo="Typo.body1" Class="mt-4">Memeriksa otentikasi...</MudText>
+                    </MudContainer>
+                </Authorizing>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <LayoutView Layout="typeof(Layout.MainLayout)">
+                <MudContainer MaxWidth="MaxWidth.Small" Class="mt-16 text-center">
+                    <MudPaper Class="pa-8">
+                        <MudIcon Icon="@Icons.Material.Filled.SearchOff" Color="Color.Warning" Size="Size.Large" Class="mb-4" />
+                        <MudText Typo="Typo.h5" GutterBottom="true">Halaman Tidak Ditemukan (404)</MudText>
+                        <MudText Typo="Typo.body1" Class="mb-6">Halaman yang Anda cari tidak ditemukan atau telah dipindahkan.</MudText>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/">Kembali ke Beranda</MudButton>
+                    </MudPaper>
+                </MudContainer>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>
