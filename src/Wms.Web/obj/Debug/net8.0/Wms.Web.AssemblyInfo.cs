@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Wms.Web")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b5f0162ca746b7f919392f49d22a3e440d96bb25")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f980b4ecc557db959e7caf4b35cbcd3e469568be")]
 [assembly: System.Reflection.AssemblyProductAttribute("Wms.Web")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Wms.Web")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
