@@ -12,6 +12,7 @@ public class GoodsReceipt
 
     public Guid WarehouseId { get; set; }
     public Guid? SupplierId { get; set; }
+    public Guid? PurchaseOrderId { get; set; }
     public string? PurchaseOrderNumber { get; set; }
     public string? Notes { get; set; }
 
@@ -31,6 +32,7 @@ public class GoodsReceipt
 
     public Warehouse Warehouse { get; set; } = null!;
     public Supplier? Supplier { get; set; }
+    public PurchaseOrder? PurchaseOrder { get; set; }
     public ApplicationUser CreatedByUser { get; set; } = null!;
     public ApplicationUser? PostedByUser { get; set; }
     public ApplicationUser? ReversedByUser { get; set; }

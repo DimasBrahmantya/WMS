@@ -1,0 +1,467 @@
+@page "/operations/purchase-orders"
+@attribute [Authorize]
+@inject IPurchaseOrderService PoService
+@inject IWarehouseService WarehouseService
+@inject IProductService ProductService
+@inject ISupplierService SupplierService
+@inject IUserContext UserContext
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Purchase Order (PO) — WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="px-0 py-2 mb-2" />
+
+    <div class="d-flex flex-wrap justify-space-between align-center mb-4 gap-2">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Purchase Order (PO)</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Pengadaan barang dari pemasok, persetujuan bertingkat, dan pelacakan penerimaan parsial</MudText>
+        </div>
+        <AuthorizeView Policy="@Permissions.PurchaseOrderCreate">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+                    Buat PO Baru
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </div>
+
+    <MudCard Elevation="2">
+        <MudCardContent Class="pa-4">
+            <!-- Filter Bar -->
+            <MudGrid Class="mb-3" Spacing="2">
+                <MudItem xs="12" sm="6" md="4">
+                    <MudTextField @bind-Value="_searchString"
+                                  Placeholder="Cari nomor PO, pemasok, catatan..."
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  DebounceInterval="400"
+                                  OnDebounceIntervalElapsed="OnSearchChanged"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="Guid?" Value="_selectedWarehouseId" ValueChanged="OnWarehouseChanged" Label="Gudang Tujuan" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="Guid?" Value="null">Semua Gudang</MudSelectItem>
+                        @foreach (var wh in _warehouses)
+                        {
+                            <MudSelectItem T="Guid?" Value="@((Guid?)wh.Id)">@wh.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="PurchaseOrderStatus?" Value="_selectedStatus" ValueChanged="OnStatusChanged" Label="Status PO" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="PurchaseOrderStatus?" Value="null">Semua Status</MudSelectItem>
+                        <MudSelectItem T="PurchaseOrderStatus?" Value="PurchaseOrderStatus.Draft">Draft</MudSelectItem>
+                        <MudSelectItem T="PurchaseOrderStatus?" Value="PurchaseOrderStatus.PendingApproval">Menunggu Approval</MudSelectItem>
+                        <MudSelectItem T="PurchaseOrderStatus?" Value="PurchaseOrderStatus.Approved">Approved</MudSelectItem>
+                        <MudSelectItem T="PurchaseOrderStatus?" Value="PurchaseOrderStatus.Ordered">Ordered (Dipesan)</MudSelectItem>
+                        <MudSelectItem T="PurchaseOrderStatus?" Value="PurchaseOrderStatus.PartiallyReceived">Diterima Sebagian</MudSelectItem>
+                        <MudSelectItem T="PurchaseOrderStatus?" Value="PurchaseOrderStatus.Received">Diterima Penuh</MudSelectItem>
+                        <MudSelectItem T="PurchaseOrderStatus?" Value="PurchaseOrderStatus.Cancelled">Dibatalkan</MudSelectItem>
+                        <MudSelectItem T="PurchaseOrderStatus?" Value="PurchaseOrderStatus.Rejected">Ditolak</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <!-- Table -->
+            <MudTable T="PurchaseOrderDto"
+                      ServerData="LoadServerData"
+                      @ref="_table"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Elevation="0">
+                <HeaderContent>
+                    <MudTh>No. PO</MudTh>
+                    <MudTh>Tanggal</MudTh>
+                    <MudTh>Pemasok</MudTh>
+                    <MudTh>Gudang Tujuan</MudTh>
+                    <MudTh Style="text-align:right;">Total Nilai (IDR)</MudTh>
+                    <MudTh>Pembuat</MudTh>
+                    <MudTh Style="text-align:center;">Status</MudTh>
+                    <MudTh Style="text-align:right;">Aksi</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="No. PO" Class="font-weight-bold text-primary">@context.PoNumber</MudTd>
+                    <MudTd DataLabel="Tanggal">@context.OrderDate.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd DataLabel="Pemasok">@context.SupplierName</MudTd>
+                    <MudTd DataLabel="Gudang Tujuan">@context.WarehouseName</MudTd>
+                    <MudTd DataLabel="Total Nilai" Style="text-align:right;">@context.TotalAmount.ToString("N0")</MudTd>
+                    <MudTd DataLabel="Pembuat">@context.CreatedByUserName</MudTd>
+                    <MudTd DataLabel="Status" Style="text-align:center;">
+                        @GetStatusChip(context.Status)
+                    </MudTd>
+                    <MudTd DataLabel="Aksi" Style="text-align:right;">
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true">
+                            <MudMenuItem Icon="@Icons.Material.Filled.Visibility" OnClick="() => ViewDetails(context.Id)">Lihat Rincian</MudMenuItem>
+
+                            @if (context.Status == PurchaseOrderStatus.Draft)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.Send" IconColor="Color.Info" OnClick="() => SubmitApproval(context)">Ajukan Approval</MudMenuItem>
+                            }
+
+                            @if (context.Status == PurchaseOrderStatus.PendingApproval)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success" OnClick="() => ApprovePo(context)">Setujui (Approve)</MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.Cancel" IconColor="Color.Error" OnClick="() => RejectPo(context)">Tolak (Reject)</MudMenuItem>
+                            }
+
+                            @if (context.Status == PurchaseOrderStatus.Approved)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.LocalShipping" IconColor="Color.Primary" OnClick="() => MarkOrdered(context)">Tandai Dipesan</MudMenuItem>
+                            }
+
+                            @if (context.Status != PurchaseOrderStatus.Received && context.Status != PurchaseOrderStatus.Cancelled && context.Status != PurchaseOrderStatus.PartiallyReceived)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.Close" IconColor="Color.Error" OnClick="() => CancelPo(context)">Batalkan PO</MudMenuItem>
+                            }
+                        </MudMenu>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Align="Align.Center" Class="py-6 text-muted">Belum ada data Purchase Order</MudText>
+                </NoRecordsContent>
+                <PagerContent>
+                    <MudTablePager RowsPerPageString="Baris per halaman:" />
+                </PagerContent>
+            </MudTable>
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
+
+<!-- Dialog Detail PO -->
+<MudDialog @bind-Visible="_isDetailOpen" Options="_dialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.Assignment" Class="mr-2" />
+            <MudText Typo="Typo.h6">Rincian Purchase Order: @_activePo?.PoNumber</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_activePo != null)
+        {
+            <MudGrid Class="mb-4">
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Pemasok</MudText>
+                    <MudText Typo="Typo.body1" Class="font-weight-bold">@_activePo.SupplierName</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Gudang Tujuan</MudText>
+                    <MudText Typo="Typo.body1">@_activePo.WarehouseName</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Status Saat Ini</MudText>
+                    <div class="mt-1">@GetStatusChip(_activePo.Status)</div>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Total Nilai</MudText>
+                    <MudText Typo="Typo.h6" Color="Color.Primary" Class="font-weight-bold">Rp @_activePo.TotalAmount.ToString("N0")</MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Catatan</MudText>
+                    <MudText Typo="Typo.body2">@(_activePo.Notes ?? "-")</MudText>
+                </MudItem>
+            </MudGrid>
+
+            <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">Item Barang & Status Penerimaan Parsial</MudText>
+            <MudTable Items="_activePo.Lines" Dense="true" Elevation="1" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Barang (SKU)</MudTh>
+                    <MudTh Style="text-align:right;">Kuantitas Pesanan</MudTh>
+                    <MudTh Style="text-align:right;">Telah Diterima</MudTh>
+                    <MudTh Style="text-align:right;">Sisa Belum Diterima</MudTh>
+                    <MudTh Style="text-align:right;">Harga Satuan</MudTh>
+                    <MudTh Style="text-align:right;">Subtotal</MudTh>
+                </HeaderContent>
+                <RowTemplate Context="line">
+                    <MudTd>@line.ProductName (@line.ProductSku)</MudTd>
+                    <MudTd Style="text-align:right;">@line.OrderedQuantity.ToString("N0") @line.UnitName</MudTd>
+                    <MudTd Style="text-align:right;" Class="text-success font-weight-bold">@line.ReceivedQuantity.ToString("N0")</MudTd>
+                    <MudTd Style="text-align:right;" Class="@(line.RemainingQuantity > 0 ? "text-warning font-weight-bold" : "text-muted")">
+                        @line.RemainingQuantity.ToString("N0")
+                    </MudTd>
+                    <MudTd Style="text-align:right;">@line.UnitPrice.ToString("N0")</MudTd>
+                    <MudTd Style="text-align:right;">@line.Subtotal.ToString("N0")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isDetailOpen = false">Tutup</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Dialog Buat PO Baru -->
+<MudDialog @bind-Visible="_isCreateOpen" Options="_dialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.AddShoppingCart" Class="mr-2" />
+            <MudText Typo="Typo.h6">Buat Purchase Order Baru</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid" @bind-Value="_createModel.SupplierId" Label="Pemasok *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var s in _suppliers)
+                    {
+                        <MudSelectItem Value="@s.Id">@s.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid" @bind-Value="_createModel.WarehouseId" Label="Gudang Tujuan *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var wh in _warehouses)
+                    {
+                        <MudSelectItem Value="@wh.Id">@wh.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_createModel.Notes" Label="Catatan Pengadaan" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" />
+            </MudItem>
+        </MudGrid>
+
+        <div class="d-flex justify-space-between align-center mt-4 mb-2">
+            <MudText Typo="Typo.subtitle2" Class="font-weight-bold">Daftar Barang Pesanan</MudText>
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddCreateLine">
+                Tambah Baris
+            </MudButton>
+        </div>
+
+        @foreach (var (line, index) in _createModel.Lines.Select((l, i) => (l, i)))
+        {
+            <MudGrid Class="align-center mb-2 pa-2 border rounded" Spacing="2">
+                <MudItem xs="12" sm="5">
+                    <MudSelect T="Guid" @bind-Value="line.ProductId" Label="Pilih Barang *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var p in _products)
+                        {
+                            <MudSelectItem Value="@p.Id">@p.Name (@p.Sku)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudNumericField @bind-Value="line.OrderedQuantity" Label="Jumlah *" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" />
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudNumericField @bind-Value="line.UnitPrice" Label="Harga Satuan (IDR) *" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" />
+                </MudItem>
+                <MudItem xs="12" sm="1" Class="d-flex justify-end">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="() => RemoveCreateLine(index)" />
+                </MudItem>
+            </MudGrid>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isCreateOpen = false">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveCreatePo" Disabled="_isSaving">
+            @if (_isSaving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Simpan PO (Draft)
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private MudTable<PurchaseOrderDto>? _table;
+    private string? _searchString;
+    private Guid? _selectedWarehouseId;
+    private PurchaseOrderStatus? _selectedStatus;
+    private bool _isDetailOpen;
+    private bool _isCreateOpen;
+    private bool _isSaving;
+    private PurchaseOrderDto? _activePo;
+
+    private readonly CreatePurchaseOrderCommand _createModel = new();
+    private List<WarehouseDto> _warehouses = new();
+    private List<ProductDto> _products = new();
+    private List<SupplierDto> _suppliers = new();
+
+    private readonly List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new BreadcrumbItem("Utama", "/"),
+        new BreadcrumbItem("Operasional", null, disabled: true),
+        new BreadcrumbItem("Purchase Order", null, disabled: true)
+    };
+
+    private readonly DialogOptions _dialogOptions = new()
+    {
+        MaxWidth = MaxWidth.Medium,
+        FullWidth = true,
+        CloseButton = true
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _warehouses = (await WarehouseService.GetActiveWarehousesAsync()).ToList();
+        _products = (await ProductService.GetActiveProductsAsync()).ToList();
+        _suppliers = (await SupplierService.GetActiveSuppliersAsync()).ToList();
+    }
+
+    private async Task<TableData<PurchaseOrderDto>> LoadServerData(TableState state, CancellationToken ct)
+    {
+        var query = new PurchaseOrderFilterQuery
+        {
+            Page = state.Page + 1,
+            PageSize = state.PageSize,
+            SearchTerm = _searchString,
+            WarehouseId = _selectedWarehouseId,
+            Status = _selectedStatus
+        };
+
+        var result = await PoService.GetPurchaseOrdersAsync(query);
+        if (result.Succeeded && result.Data != null)
+        {
+            return new TableData<PurchaseOrderDto>
+            {
+                TotalItems = result.Data.TotalCount,
+                Items = result.Data.Items
+            };
+        }
+
+        return new TableData<PurchaseOrderDto> { TotalItems = 0, Items = Array.Empty<PurchaseOrderDto>() };
+    }
+
+    private void OnSearchChanged() => _table?.ReloadServerData();
+    private void OnWarehouseChanged(Guid? whId) { _selectedWarehouseId = whId; _table?.ReloadServerData(); }
+    private void OnStatusChanged(PurchaseOrderStatus? st) { _selectedStatus = st; _table?.ReloadServerData(); }
+
+    private async Task ViewDetails(Guid id)
+    {
+        var res = await PoService.GetPurchaseOrderByIdAsync(id);
+        if (res.Succeeded && res.Data != null)
+        {
+            _activePo = res.Data;
+            _isDetailOpen = true;
+        }
+        else
+        {
+            Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal memuat detail PO", Severity.Error);
+        }
+    }
+
+    private void OpenCreateDialog()
+    {
+        _createModel.Lines.Clear();
+        _createModel.Lines.Add(new PurchaseOrderLineItemCommand { OrderedQuantity = 1 });
+        _isCreateOpen = true;
+    }
+
+    private void AddCreateLine() => _createModel.Lines.Add(new PurchaseOrderLineItemCommand { OrderedQuantity = 1 });
+    private void RemoveCreateLine(int index)
+    {
+        if (_createModel.Lines.Count > 1) _createModel.Lines.RemoveAt(index);
+    }
+
+    private async Task SaveCreatePo()
+    {
+        if (_createModel.WarehouseId == Guid.Empty || _createModel.SupplierId == Guid.Empty || !_createModel.Lines.Any(l => l.ProductId != Guid.Empty))
+        {
+            Snackbar.Add("Mohon lengkapi pemasok, gudang, dan barang.", Severity.Warning);
+            return;
+        }
+
+        _isSaving = true;
+        try
+        {
+            var userId = UserContext.UserId ?? Guid.Empty;
+            var res = await PoService.CreatePurchaseOrderAsync(_createModel, userId);
+            if (res.Succeeded)
+            {
+                Snackbar.Add("Purchase Order berhasil dibuat sebagai draf.", Severity.Success);
+                _isCreateOpen = false;
+                await _table!.ReloadServerData();
+            }
+            else
+            {
+                Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal membuat PO", Severity.Error);
+            }
+        }
+        finally { _isSaving = false; }
+    }
+
+    private async Task SubmitApproval(PurchaseOrderDto po)
+    {
+        var res = await PoService.SubmitForApprovalAsync(po.Id, UserContext.UserId ?? Guid.Empty);
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"PO {po.PoNumber} berhasil diajukan untuk approval.", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal mengajukan approval", Severity.Error);
+    }
+
+    private async Task ApprovePo(PurchaseOrderDto po)
+    {
+        var res = await PoService.ApprovePurchaseOrderAsync(po.Id, UserContext.UserId ?? Guid.Empty);
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"PO {po.PoNumber} berhasil disetujui (Approved).", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else
+        {
+            // Catat dan tampilkan pesan pemisahan tugas bila pembuat mencoba approve
+            Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal menyetujui PO", Severity.Error);
+        }
+    }
+
+    private async Task RejectPo(PurchaseOrderDto po)
+    {
+        var res = await PoService.RejectPurchaseOrderAsync(po.Id, UserContext.UserId ?? Guid.Empty, "Ditolak via web");
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"PO {po.PoNumber} ditolak.", Severity.Info);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal menolak PO", Severity.Error);
+    }
+
+    private async Task MarkOrdered(PurchaseOrderDto po)
+    {
+        var res = await PoService.MarkAsOrderedAsync(po.Id, UserContext.UserId ?? Guid.Empty);
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"PO {po.PoNumber} berhasil ditandai telah dipesan ke pemasok.", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal mengubah status PO", Severity.Error);
+    }
+
+    private async Task CancelPo(PurchaseOrderDto po)
+    {
+        var res = await PoService.CancelPurchaseOrderAsync(po.Id, UserContext.UserId ?? Guid.Empty, "Dibatalkan oleh pengguna");
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"PO {po.PoNumber} telah dibatalkan.", Severity.Info);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal membatalkan PO", Severity.Error);
+    }
+
+    private RenderFragment GetStatusChip(PurchaseOrderStatus status) => builder =>
+    {
+        var (color, label) = status switch
+        {
+            PurchaseOrderStatus.Draft => (Color.Default, "Draft"),
+            PurchaseOrderStatus.PendingApproval => (Color.Warning, "Menunggu Approval"),
+            PurchaseOrderStatus.Approved => (Color.Info, "Approved"),
+            PurchaseOrderStatus.Ordered => (Color.Primary, "Ordered (Dipesan)"),
+            PurchaseOrderStatus.PartiallyReceived => (Color.Secondary, "Diterima Sebagian"),
+            PurchaseOrderStatus.Received => (Color.Success, "Diterima Penuh"),
+            PurchaseOrderStatus.Cancelled => (Color.Dark, "Dibatalkan"),
+            PurchaseOrderStatus.Rejected => (Color.Error, "Ditolak"),
+            _ => (Color.Default, status.ToString())
+        };
+
+        builder.OpenComponent<MudChip<string>>(0);
+        builder.AddAttribute(1, "Color", color);
+        builder.AddAttribute(2, "Size", Size.Small);
+        builder.AddAttribute(3, "Variant", Variant.Filled);
+        builder.AddAttribute(4, "ChildContent", (RenderFragment)(b => b.AddContent(5, label)));
+        builder.CloseComponent();
+    };
+}

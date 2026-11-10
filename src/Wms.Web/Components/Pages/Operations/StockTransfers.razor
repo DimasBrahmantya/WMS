@@ -1,0 +1,531 @@
+@page "/operations/transfers"
+@attribute [Authorize]
+@inject IStockTransferService TransferService
+@inject IWarehouseService WarehouseService
+@inject IProductService ProductService
+@inject IUserContext UserContext
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Transfer Antar-Gudang — WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="px-0 py-2 mb-2" />
+
+    <div class="d-flex flex-wrap justify-space-between align-center mb-4 gap-2">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Transfer Antar-Gudang</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Pemindahan stok antar-gudang, status in_transit, dan penerimaan di gudang tujuan</MudText>
+        </div>
+        <AuthorizeView Policy="@Permissions.StockTransferCreate">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+                    Permintaan Transfer Baru
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </div>
+
+    <MudCard Elevation="2">
+        <MudCardContent Class="pa-4">
+            <!-- Filter Bar -->
+            <MudGrid Class="mb-3" Spacing="2">
+                <MudItem xs="12" sm="6" md="4">
+                    <MudTextField @bind-Value="_searchString"
+                                  Placeholder="Cari nomor transfer, gudang, alasan..."
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  DebounceInterval="400"
+                                  OnDebounceIntervalElapsed="OnSearchChanged"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="Guid?" Value="_selectedOriginWhId" ValueChanged="OnOriginChanged" Label="Gudang Asal" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="Guid?" Value="null">Semua Gudang Asal</MudSelectItem>
+                        @foreach (var wh in _warehouses)
+                        {
+                            <MudSelectItem T="Guid?" Value="@((Guid?)wh.Id)">@wh.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="StockTransferStatus?" Value="_selectedStatus" ValueChanged="OnStatusChanged" Label="Status Transfer" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="StockTransferStatus?" Value="null">Semua Status</MudSelectItem>
+                        <MudSelectItem T="StockTransferStatus?" Value="StockTransferStatus.Draft">Draft</MudSelectItem>
+                        <MudSelectItem T="StockTransferStatus?" Value="StockTransferStatus.PendingApproval">Menunggu Approval</MudSelectItem>
+                        <MudSelectItem T="StockTransferStatus?" Value="StockTransferStatus.Approved">Approved</MudSelectItem>
+                        <MudSelectItem T="StockTransferStatus?" Value="StockTransferStatus.InTransit">In Transit (Dalam Perjalanan)</MudSelectItem>
+                        <MudSelectItem T="StockTransferStatus?" Value="StockTransferStatus.PartiallyReceived">Diterima Sebagian</MudSelectItem>
+                        <MudSelectItem T="StockTransferStatus?" Value="StockTransferStatus.Received">Diterima Penuh</MudSelectItem>
+                        <MudSelectItem T="StockTransferStatus?" Value="StockTransferStatus.Cancelled">Dibatalkan</MudSelectItem>
+                        <MudSelectItem T="StockTransferStatus?" Value="StockTransferStatus.Rejected">Ditolak</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <!-- Table -->
+            <MudTable T="StockTransferDto"
+                      ServerData="LoadServerData"
+                      @ref="_table"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Elevation="0">
+                <HeaderContent>
+                    <MudTh>No. Transfer</MudTh>
+                    <MudTh>Tanggal</MudTh>
+                    <MudTh>Gudang Asal</MudTh>
+                    <MudTh>Gudang Tujuan</MudTh>
+                    <MudTh>Pembuat</MudTh>
+                    <MudTh Style="text-align:center;">Status</MudTh>
+                    <MudTh Style="text-align:right;">Aksi</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="No. Transfer" Class="font-weight-bold text-primary">@context.TransferNumber</MudTd>
+                    <MudTd DataLabel="Tanggal">@context.TransferDate.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd DataLabel="Gudang Asal">@context.OriginWarehouseName</MudTd>
+                    <MudTd DataLabel="Gudang Tujuan">@context.DestinationWarehouseName</MudTd>
+                    <MudTd DataLabel="Pembuat">@context.CreatedByUserName</MudTd>
+                    <MudTd DataLabel="Status" Style="text-align:center;">
+                        @GetStatusChip(context.Status)
+                    </MudTd>
+                    <MudTd DataLabel="Aksi" Style="text-align:right;">
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true">
+                            <MudMenuItem Icon="@Icons.Material.Filled.Visibility" OnClick="() => ViewDetails(context.Id)">Lihat Rincian</MudMenuItem>
+
+                            @if (context.Status == StockTransferStatus.Draft)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.Send" IconColor="Color.Info" OnClick="() => SubmitApproval(context)">Ajukan Approval</MudMenuItem>
+                            }
+
+                            @if (context.Status == StockTransferStatus.PendingApproval)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success" OnClick="() => ApproveTransfer(context)">Setujui (Approve)</MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.Cancel" IconColor="Color.Error" OnClick="() => RejectTransfer(context)">Tolak (Reject)</MudMenuItem>
+                            }
+
+                            @if (context.Status == StockTransferStatus.Approved)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.LocalShipping" IconColor="Color.Primary" OnClick="() => DispatchTransfer(context)">Kirim (In-Transit)</MudMenuItem>
+                            }
+
+                            @if (context.Status == StockTransferStatus.InTransit || context.Status == StockTransferStatus.PartiallyReceived)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.MoveToInbox" IconColor="Color.Success" OnClick="() => OpenReceiveDialog(context)">Terima di Gudang Tujuan</MudMenuItem>
+                            }
+
+                            @if (context.Status != StockTransferStatus.Received && context.Status != StockTransferStatus.Cancelled && context.Status != StockTransferStatus.InTransit && context.Status != StockTransferStatus.PartiallyReceived)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.Close" IconColor="Color.Error" OnClick="() => CancelTransfer(context)">Batalkan</MudMenuItem>
+                            }
+                        </MudMenu>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Align="Align.Center" Class="py-6 text-muted">Belum ada data Transfer Antar-Gudang</MudText>
+                </NoRecordsContent>
+                <PagerContent>
+                    <MudTablePager RowsPerPageString="Baris per halaman:" />
+                </PagerContent>
+            </MudTable>
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
+
+<!-- Dialog Detail Transfer -->
+<MudDialog @bind-Visible="_isDetailOpen" Options="_dialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.SwapHoriz" Class="mr-2" />
+            <MudText Typo="Typo.h6">Rincian Transfer: @_activeTransfer?.TransferNumber</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_activeTransfer != null)
+        {
+            <MudGrid Class="mb-4">
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Gudang Asal (Pengirim)</MudText>
+                    <MudText Typo="Typo.body1" Class="font-weight-bold">@_activeTransfer.OriginWarehouseName</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Gudang Tujuan (Penerima)</MudText>
+                    <MudText Typo="Typo.body1" Class="font-weight-bold">@_activeTransfer.DestinationWarehouseName</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Status Transfer</MudText>
+                    <div class="mt-1">@GetStatusChip(_activeTransfer.Status)</div>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Alasan Transfer</MudText>
+                    <MudText Typo="Typo.body2">@(_activeTransfer.Reason ?? "-")</MudText>
+                </MudItem>
+            </MudGrid>
+
+            <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">Item Barang Transfer</MudText>
+            <MudTable Items="_activeTransfer.Lines" Dense="true" Elevation="1" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Barang (SKU)</MudTh>
+                    <MudTh Style="text-align:right;">Diminta</MudTh>
+                    <MudTh Style="text-align:right;">Dikirim (In-Transit)</MudTh>
+                    <MudTh Style="text-align:right;">Diterima</MudTh>
+                    <MudTh Style="text-align:right;">Sisa Dalam Perjalanan</MudTh>
+                </HeaderContent>
+                <RowTemplate Context="line">
+                    <MudTd>@line.ProductName (@line.ProductSku)</MudTd>
+                    <MudTd Style="text-align:right;">@line.QuantityRequested.ToString("N0") @line.UnitName</MudTd>
+                    <MudTd Style="text-align:right;" Class="text-info font-weight-bold">@line.QuantityDispatched.ToString("N0")</MudTd>
+                    <MudTd Style="text-align:right;" Class="text-success font-weight-bold">@line.QuantityReceived.ToString("N0")</MudTd>
+                    <MudTd Style="text-align:right;" Class="@(line.RemainingQuantity > 0 ? "text-warning font-weight-bold" : "text-muted")">
+                        @line.RemainingQuantity.ToString("N0")
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isDetailOpen = false">Tutup</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Dialog Buat Transfer Baru -->
+<MudDialog @bind-Visible="_isCreateOpen" Options="_dialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.SwapHoriz" Class="mr-2" />
+            <MudText Typo="Typo.h6">Buat Permintaan Transfer Antar-Gudang</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid" @bind-Value="_createModel.OriginWarehouseId" Label="Gudang Asal *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var wh in _warehouses)
+                    {
+                        <MudSelectItem Value="@wh.Id">@wh.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid" @bind-Value="_createModel.DestinationWarehouseId" Label="Gudang Tujuan *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var wh in _warehouses)
+                    {
+                        <MudSelectItem Value="@wh.Id">@wh.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_createModel.Reason" Label="Alasan Transfer *" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+        </MudGrid>
+
+        <div class="d-flex justify-space-between align-center mt-4 mb-2">
+            <MudText Typo="Typo.subtitle2" Class="font-weight-bold">Daftar Barang yang Dipindahkan</MudText>
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddCreateLine">
+                Tambah Baris
+            </MudButton>
+        </div>
+
+        @foreach (var (line, index) in _createModel.Lines.Select((l, i) => (l, i)))
+        {
+            <MudGrid Class="align-center mb-2 pa-2 border rounded" Spacing="2">
+                <MudItem xs="12" sm="7">
+                    <MudSelect T="Guid" @bind-Value="line.ProductId" Label="Barang *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var p in _products)
+                        {
+                            <MudSelectItem Value="@p.Id">@p.Name (@p.Sku)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="10" sm="4">
+                    <MudNumericField @bind-Value="line.QuantityRequested" Label="Kuantitas Transfer *" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" />
+                </MudItem>
+                <MudItem xs="2" sm="1" Class="d-flex justify-end">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="() => RemoveCreateLine(index)" />
+                </MudItem>
+            </MudGrid>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isCreateOpen = false">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveCreateTransfer" Disabled="_isSaving">
+            @if (_isSaving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Simpan Permintaan (Draft)
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Dialog Penerimaan di Tujuan -->
+<MudDialog @bind-Visible="_isReceiveOpen" Options="_dialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.MoveToInbox" Class="mr-2" />
+            <MudText Typo="Typo.h6">Penerimaan Barang di Gudang Tujuan</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Masukkan kuantitas fisik yang diterima di gudang tujuan <b>@_activeTransfer?.DestinationWarehouseName</b>:
+        </MudText>
+
+        @if (_activeTransfer != null)
+        {
+            @foreach (var line in _activeTransfer.Lines.Where(l => l.RemainingQuantity > 0))
+            {
+                var inputLine = _receiveModel.Lines.FirstOrDefault(r => r.TransferLineId == line.Id);
+                if (inputLine != null)
+                {
+                    <MudGrid Class="align-center mb-2 pa-2 border rounded" Spacing="2">
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.body2" Class="font-weight-bold">@line.ProductName (@line.ProductSku)</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Dikirim: @line.QuantityDispatched | Sisa: @line.RemainingQuantity @line.UnitName</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="inputLine.QuantityReceived"
+                                             Label="Kuantitas Diterima *"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Min="1"
+                                             Max="line.RemainingQuantity" />
+                        </MudItem>
+                    </MudGrid>
+                }
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isReceiveOpen = false">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="ExecuteReceiveTransfer" Disabled="_isSaving">
+            @if (_isSaving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Konfirmasi Penerimaan
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private MudTable<StockTransferDto>? _table;
+    private string? _searchString;
+    private Guid? _selectedOriginWhId;
+    private StockTransferStatus? _selectedStatus;
+    private bool _isDetailOpen;
+    private bool _isCreateOpen;
+    private bool _isReceiveOpen;
+    private bool _isSaving;
+    private StockTransferDto? _activeTransfer;
+
+    private readonly CreateStockTransferCommand _createModel = new();
+    private ReceiveStockTransferCommand _receiveModel = new();
+    private List<WarehouseDto> _warehouses = new();
+    private List<ProductDto> _products = new();
+
+    private readonly List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new BreadcrumbItem("Utama", "/"),
+        new BreadcrumbItem("Operasional", null, disabled: true),
+        new BreadcrumbItem("Transfer Antar-Gudang", null, disabled: true)
+    };
+
+    private readonly DialogOptions _dialogOptions = new()
+    {
+        MaxWidth = MaxWidth.Medium,
+        FullWidth = true,
+        CloseButton = true
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _warehouses = (await WarehouseService.GetActiveWarehousesAsync()).ToList();
+        _products = (await ProductService.GetActiveProductsAsync()).ToList();
+    }
+
+    private async Task<TableData<StockTransferDto>> LoadServerData(TableState state, CancellationToken ct)
+    {
+        var query = new StockTransferFilterQuery
+        {
+            Page = state.Page + 1,
+            PageSize = state.PageSize,
+            SearchTerm = _searchString,
+            OriginWarehouseId = _selectedOriginWhId,
+            Status = _selectedStatus
+        };
+
+        var result = await TransferService.GetStockTransfersAsync(query);
+        if (result.Succeeded && result.Data != null)
+        {
+            return new TableData<StockTransferDto>
+            {
+                TotalItems = result.Data.TotalCount,
+                Items = result.Data.Items
+            };
+        }
+
+        return new TableData<StockTransferDto> { TotalItems = 0, Items = Array.Empty<StockTransferDto>() };
+    }
+
+    private void OnSearchChanged() => _table?.ReloadServerData();
+    private void OnOriginChanged(Guid? whId) { _selectedOriginWhId = whId; _table?.ReloadServerData(); }
+    private void OnStatusChanged(StockTransferStatus? st) { _selectedStatus = st; _table?.ReloadServerData(); }
+
+    private async Task ViewDetails(Guid id)
+    {
+        var res = await TransferService.GetStockTransferByIdAsync(id);
+        if (res.Succeeded && res.Data != null)
+        {
+            _activeTransfer = res.Data;
+            _isDetailOpen = true;
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal memuat detail transfer", Severity.Error);
+    }
+
+    private void OpenCreateDialog()
+    {
+        _createModel.Lines.Clear();
+        _createModel.Lines.Add(new CreateStockTransferLineDto { QuantityRequested = 1 });
+        _isCreateOpen = true;
+    }
+
+    private void AddCreateLine() => _createModel.Lines.Add(new CreateStockTransferLineDto { QuantityRequested = 1 });
+    private void RemoveCreateLine(int index)
+    {
+        if (_createModel.Lines.Count > 1) _createModel.Lines.RemoveAt(index);
+    }
+
+    private async Task SaveCreateTransfer()
+    {
+        if (_createModel.OriginWarehouseId == Guid.Empty || _createModel.DestinationWarehouseId == Guid.Empty ||
+            _createModel.OriginWarehouseId == _createModel.DestinationWarehouseId ||
+            !_createModel.Lines.Any(l => l.ProductId != Guid.Empty))
+        {
+            Snackbar.Add("Mohon pilih gudang asal & tujuan yang berbeda, serta pilih barang.", Severity.Warning);
+            return;
+        }
+
+        _isSaving = true;
+        try
+        {
+            var res = await TransferService.CreateDraftAsync(_createModel, UserContext.UserId ?? Guid.Empty);
+            if (res.Succeeded)
+            {
+                Snackbar.Add("Permintaan transfer berhasil dibuat sebagai draf.", Severity.Success);
+                _isCreateOpen = false;
+                await _table!.ReloadServerData();
+            }
+            else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal membuat transfer", Severity.Error);
+        }
+        finally { _isSaving = false; }
+    }
+
+    private async Task SubmitApproval(StockTransferDto t)
+    {
+        var res = await TransferService.SubmitForApprovalAsync(t.Id, UserContext.UserId ?? Guid.Empty);
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Transfer {t.TransferNumber} berhasil diajukan untuk approval.", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal mengajukan approval", Severity.Error);
+    }
+
+    private async Task ApproveTransfer(StockTransferDto t)
+    {
+        var res = await TransferService.ApproveAsync(t.Id, UserContext.UserId ?? Guid.Empty);
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Transfer {t.TransferNumber} berhasil disetujui (Approved).", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal menyetujui transfer", Severity.Error);
+    }
+
+    private async Task RejectTransfer(StockTransferDto t)
+    {
+        var res = await TransferService.RejectAsync(t.Id, UserContext.UserId ?? Guid.Empty, "Ditolak via web");
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Transfer {t.TransferNumber} ditolak.", Severity.Info);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal menolak transfer", Severity.Error);
+    }
+
+    private async Task DispatchTransfer(StockTransferDto t)
+    {
+        var res = await TransferService.DispatchAsync(t.Id, UserContext.UserId ?? Guid.Empty, Guid.NewGuid().ToString());
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Transfer {t.TransferNumber} berhasil dikirim (status In-Transit). Stok gudang asal telah dipotong.", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal mengirim transfer", Severity.Error);
+    }
+
+    private void OpenReceiveDialog(StockTransferDto t)
+    {
+        _activeTransfer = t;
+        _receiveModel = new ReceiveStockTransferCommand
+        {
+            Lines = t.Lines.Where(l => l.RemainingQuantity > 0).Select(l => new ReceiveStockTransferLineDto
+            {
+                TransferLineId = l.Id,
+                QuantityReceived = l.RemainingQuantity,
+                DestinationLocationId = l.DestinationLocationId ?? Guid.Empty
+            }).ToList()
+        };
+        _isReceiveOpen = true;
+    }
+
+    private async Task ExecuteReceiveTransfer()
+    {
+        if (_activeTransfer == null) return;
+        _isSaving = true;
+        try
+        {
+            var res = await TransferService.ReceiveAsync(_activeTransfer.Id, _receiveModel, UserContext.UserId ?? Guid.Empty, Guid.NewGuid().ToString());
+            if (res.Succeeded)
+            {
+                Snackbar.Add($"Penerimaan transfer {_activeTransfer.TransferNumber} berhasil dicatat di gudang tujuan.", Severity.Success);
+                _isReceiveOpen = false;
+                await _table!.ReloadServerData();
+            }
+            else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal mencatat penerimaan transfer", Severity.Error);
+        }
+        finally { _isSaving = false; }
+    }
+
+    private async Task CancelTransfer(StockTransferDto t)
+    {
+        var res = await TransferService.CancelAsync(t.Id, UserContext.UserId ?? Guid.Empty, "Dibatalkan oleh pengguna");
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Transfer {t.TransferNumber} telah dibatalkan.", Severity.Info);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal membatalkan transfer", Severity.Error);
+    }
+
+    private RenderFragment GetStatusChip(StockTransferStatus status) => builder =>
+    {
+        var (color, label) = status switch
+        {
+            StockTransferStatus.Draft => (Color.Default, "Draft"),
+            StockTransferStatus.PendingApproval => (Color.Warning, "Menunggu Approval"),
+            StockTransferStatus.Approved => (Color.Info, "Approved"),
+            StockTransferStatus.InTransit => (Color.Secondary, "In Transit (Dikirim)"),
+            StockTransferStatus.PartiallyReceived => (Color.Tertiary, "Diterima Sebagian"),
+            StockTransferStatus.Received => (Color.Success, "Diterima Penuh"),
+            StockTransferStatus.Cancelled => (Color.Dark, "Dibatalkan"),
+            StockTransferStatus.Rejected => (Color.Error, "Ditolak"),
+            _ => (Color.Default, status.ToString())
+        };
+
+        builder.OpenComponent<MudChip<string>>(0);
+        builder.AddAttribute(1, "Color", color);
+        builder.AddAttribute(2, "Size", Size.Small);
+        builder.AddAttribute(3, "Variant", Variant.Filled);
+        builder.AddAttribute(4, "ChildContent", (RenderFragment)(b => b.AddContent(5, label)));
+        builder.CloseComponent();
+    };
+}

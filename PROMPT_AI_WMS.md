@@ -63,7 +63,7 @@ CRUD, validasi, pencarian, filter, sorting, pagination server-side, status aktif
 
 Dashboard dari data aktual (agregasi di database), stok saat ini, kartu stok, nilai persediaan (menyebut metode rata-rata dan tanggal), viewer audit log. Bedakan saldo saat ini vs historis.
 
-## Tahap 5 — Workflow operasional
+## Tahap 5 — Workflow operasional [SELESAI]
 
 PO + approval + penerimaan parsial, retur, transfer antar-gudang (status `in_transit`), stock opname (snapshot, recount, selisih nilai, approval, posting), kejadian hilang/rusak. Pemisahan tugas: pembuat tidak menyetujui dokumennya sendiri. Audit untuk semua posting, pembatalan, approval.
 

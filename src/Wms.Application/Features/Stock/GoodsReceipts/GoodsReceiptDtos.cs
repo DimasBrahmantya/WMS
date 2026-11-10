@@ -11,6 +11,7 @@ public record GoodsReceiptDto
     public string WarehouseName { get; init; } = string.Empty;
     public Guid? SupplierId { get; init; }
     public string? SupplierName { get; init; }
+    public Guid? PurchaseOrderId { get; init; }
     public string? PurchaseOrderNumber { get; init; }
     public string? Notes { get; init; }
     public DocumentStatus Status { get; init; }
@@ -38,6 +39,7 @@ public record GoodsReceiptLineDto
 {
     public Guid Id { get; init; }
     public Guid GoodsReceiptId { get; init; }
+    public Guid? PurchaseOrderLineId { get; init; }
     public Guid ProductId { get; init; }
     public string ProductSku { get; init; } = string.Empty;
     public string ProductName { get; init; } = string.Empty;
@@ -58,6 +60,7 @@ public class CreateGoodsReceiptCommand
     public DateTime DocumentDate { get; set; } = DateTime.UtcNow;
     public Guid WarehouseId { get; set; }
     public Guid? SupplierId { get; set; }
+    public Guid? PurchaseOrderId { get; set; }
     public string? PurchaseOrderNumber { get; set; }
     public string? Notes { get; set; }
     public List<CreateGoodsReceiptLineDto> Lines { get; set; } = new();
@@ -65,6 +68,7 @@ public class CreateGoodsReceiptCommand
 
 public class CreateGoodsReceiptLineDto
 {
+    public Guid? PurchaseOrderLineId { get; set; }
     public Guid ProductId { get; set; }
     public Guid WarehouseLocationId { get; set; }
     public decimal Quantity { get; set; }
@@ -80,6 +84,7 @@ public class UpdateGoodsReceiptCommand
     public DateTime DocumentDate { get; set; }
     public Guid WarehouseId { get; set; }
     public Guid? SupplierId { get; set; }
+    public Guid? PurchaseOrderId { get; set; }
     public string? PurchaseOrderNumber { get; set; }
     public string? Notes { get; set; }
     public List<CreateGoodsReceiptLineDto> Lines { get; set; } = new();

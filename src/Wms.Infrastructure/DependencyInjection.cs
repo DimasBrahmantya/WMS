@@ -77,6 +77,14 @@ public static class DependencyInjection
         services.AddScoped<Wms.Application.Features.Dashboard.IDashboardService, Services.Dashboard.DashboardService>();
         services.AddScoped<Wms.Application.Features.Reports.IReportService, Services.Reports.ReportService>();
         services.AddScoped<Wms.Application.Features.Audit.IAuditLogService, Services.Audit.AuditLogService>();
+        services.AddScoped<Wms.Application.Features.Audit.IAppAuditService, Services.Audit.AppAuditService>();
+
+        // Workflow Operasional (Tahap 5)
+        services.AddScoped<Wms.Application.Features.Operations.PurchaseOrders.IPurchaseOrderService, Services.Operations.PurchaseOrderService>();
+        services.AddScoped<Wms.Application.Features.Operations.Transfers.IStockTransferService, Services.Operations.StockTransferService>();
+        services.AddScoped<Wms.Application.Features.Operations.Opname.IStockOpnameService, Services.Operations.StockOpnameService>();
+        services.AddScoped<Wms.Application.Features.Operations.Returns.IStockReturnService, Services.Operations.StockReturnService>();
+        services.AddScoped<Wms.Application.Features.Operations.Incidents.IStockIncidentService, Services.Operations.StockIncidentService>();
 
         return services;
     }

@@ -43,6 +43,18 @@ public interface IWmsDbContext
     DbSet<StockOut> StockOuts { get; }
     DbSet<StockOutLine> StockOutLines { get; }
 
+    // Workflow Operasional (Fase 2)
+    DbSet<PurchaseOrder> PurchaseOrders { get; }
+    DbSet<PurchaseOrderLine> PurchaseOrderLines { get; }
+    DbSet<StockTransfer> StockTransfers { get; }
+    DbSet<StockTransferLine> StockTransferLines { get; }
+    DbSet<StockOpnameSession> StockOpnameSessions { get; }
+    DbSet<StockOpnameLine> StockOpnameLines { get; }
+    DbSet<StockReturn> StockReturns { get; }
+    DbSet<StockReturnLine> StockReturnLines { get; }
+    DbSet<StockIncident> StockIncidents { get; }
+    DbSet<StockIncidentLine> StockIncidentLines { get; }
+
     DatabaseFacade Database { get; }
 
     Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);

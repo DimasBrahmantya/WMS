@@ -68,6 +68,18 @@ public class WmsDbContext : IdentityDbContext<
     public DbSet<StockOut> StockOuts => Set<StockOut>();
     public DbSet<StockOutLine> StockOutLines => Set<StockOutLine>();
 
+    // Workflow Operasional (Fase 2)
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+    public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
+    public DbSet<StockTransfer> StockTransfers => Set<StockTransfer>();
+    public DbSet<StockTransferLine> StockTransferLines => Set<StockTransferLine>();
+    public DbSet<StockOpnameSession> StockOpnameSessions => Set<StockOpnameSession>();
+    public DbSet<StockOpnameLine> StockOpnameLines => Set<StockOpnameLine>();
+    public DbSet<StockReturn> StockReturns => Set<StockReturn>();
+    public DbSet<StockReturnLine> StockReturnLines => Set<StockReturnLine>();
+    public DbSet<StockIncident> StockIncidents => Set<StockIncident>();
+    public DbSet<StockIncidentLine> StockIncidentLines => Set<StockIncidentLine>();
+
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
         if (Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
@@ -660,5 +672,7 @@ public class WmsDbContext : IdentityDbContext<
                 .HasForeignKey(l => l.WarehouseLocationId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
+
+        Configurations.OperationalWorkflowConfigurations.Configure(builder, IsUserRestrictedToWarehouses, UserAllowedWarehouseIds);
     }
 }

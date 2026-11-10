@@ -147,6 +147,7 @@ public class GoodsReceiptService : IGoodsReceiptService
             WarehouseName = receipt.Warehouse.Name,
             SupplierId = receipt.SupplierId,
             SupplierName = receipt.Supplier?.Name,
+            PurchaseOrderId = receipt.PurchaseOrderId,
             PurchaseOrderNumber = receipt.PurchaseOrderNumber,
             Notes = receipt.Notes,
             Status = receipt.Status,
@@ -166,6 +167,7 @@ public class GoodsReceiptService : IGoodsReceiptService
             {
                 Id = l.Id,
                 GoodsReceiptId = l.GoodsReceiptId,
+                PurchaseOrderLineId = l.PurchaseOrderLineId,
                 ProductId = l.ProductId,
                 ProductSku = l.Product.Sku,
                 ProductName = l.Product.Name,
@@ -206,6 +208,7 @@ public class GoodsReceiptService : IGoodsReceiptService
             DocumentDate = DateTime.SpecifyKind(command.DocumentDate, DateTimeKind.Utc),
             WarehouseId = command.WarehouseId,
             SupplierId = command.SupplierId,
+            PurchaseOrderId = command.PurchaseOrderId,
             PurchaseOrderNumber = command.PurchaseOrderNumber,
             Notes = command.Notes,
             Status = DocumentStatus.Draft,
@@ -220,6 +223,7 @@ public class GoodsReceiptService : IGoodsReceiptService
             {
                 Id = Guid.NewGuid(),
                 GoodsReceiptId = receipt.Id,
+                PurchaseOrderLineId = lineDto.PurchaseOrderLineId,
                 ProductId = lineDto.ProductId,
                 WarehouseLocationId = lineDto.WarehouseLocationId,
                 Quantity = lineDto.Quantity,
@@ -265,6 +269,7 @@ public class GoodsReceiptService : IGoodsReceiptService
         receipt.DocumentDate = DateTime.SpecifyKind(command.DocumentDate, DateTimeKind.Utc);
         receipt.WarehouseId = command.WarehouseId;
         receipt.SupplierId = command.SupplierId;
+        receipt.PurchaseOrderId = command.PurchaseOrderId;
         receipt.PurchaseOrderNumber = command.PurchaseOrderNumber;
         receipt.Notes = command.Notes;
         receipt.UpdatedAtUtc = DateTime.UtcNow;
@@ -277,6 +282,7 @@ public class GoodsReceiptService : IGoodsReceiptService
             {
                 Id = Guid.NewGuid(),
                 GoodsReceiptId = receipt.Id,
+                PurchaseOrderLineId = lineDto.PurchaseOrderLineId,
                 ProductId = lineDto.ProductId,
                 WarehouseLocationId = lineDto.WarehouseLocationId,
                 Quantity = lineDto.Quantity,

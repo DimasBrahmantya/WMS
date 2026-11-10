@@ -6,6 +6,7 @@ public class GoodsReceiptLine
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid GoodsReceiptId { get; set; }
+    public Guid? PurchaseOrderLineId { get; set; }
     public Guid ProductId { get; set; }
     public Guid WarehouseLocationId { get; set; }
 
@@ -18,6 +19,7 @@ public class GoodsReceiptLine
     public string? Notes { get; set; }
 
     public GoodsReceipt GoodsReceipt { get; set; } = null!;
+    public PurchaseOrderLine? PurchaseOrderLine { get; set; }
     public Product Product { get; set; } = null!;
     public WarehouseLocation WarehouseLocation { get; set; } = null!;
 }

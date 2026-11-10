@@ -177,6 +177,33 @@ public class StockPostingService : IStockPostingService
                     receipt.PostedAtUtc = now;
                     receipt.UpdatedAtUtc = now;
 
+                    // Sinkronisasi Purchase Order jika dokumen penerimaan merujuk ke PO
+                    if (receipt.PurchaseOrderId.HasValue)
+                    {
+                        var po = await _dbContext.PurchaseOrders
+                            .Include(p => p.Lines)
+                            .FirstOrDefaultAsync(p => p.Id == receipt.PurchaseOrderId.Value, cancellationToken);
+
+                        if (po != null)
+                        {
+                            foreach (var line in receipt.Lines)
+                            {
+                                var poLine = po.Lines.FirstOrDefault(pl =>
+                                    (line.PurchaseOrderLineId.HasValue && pl.Id == line.PurchaseOrderLineId.Value) ||
+                                    pl.ProductId == line.ProductId);
+
+                                if (poLine != null)
+                                {
+                                    poLine.ReceivedQuantity += line.Quantity;
+                                }
+                            }
+
+                            bool allReceived = po.Lines.All(pl => pl.ReceivedQuantity >= pl.OrderedQuantity);
+                            po.Status = allReceived ? PurchaseOrderStatus.Received : PurchaseOrderStatus.PartiallyReceived;
+                            po.UpdatedAtUtc = now;
+                        }
+                    }
+
                     await _dbContext.SaveChangesAsync(cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
 
@@ -332,6 +359,33 @@ public class StockPostingService : IStockPostingService
                     receipt.ReversedAtUtc = now;
                     receipt.ReversalReason = reason;
                     receipt.UpdatedAtUtc = now;
+
+                    // Rollback sinkronisasi Purchase Order bila ada
+                    if (receipt.PurchaseOrderId.HasValue)
+                    {
+                        var po = await _dbContext.PurchaseOrders
+                            .Include(p => p.Lines)
+                            .FirstOrDefaultAsync(p => p.Id == receipt.PurchaseOrderId.Value, cancellationToken);
+
+                        if (po != null)
+                        {
+                            foreach (var line in receipt.Lines)
+                            {
+                                var poLine = po.Lines.FirstOrDefault(pl =>
+                                    (line.PurchaseOrderLineId.HasValue && pl.Id == line.PurchaseOrderLineId.Value) ||
+                                    pl.ProductId == line.ProductId);
+
+                                if (poLine != null)
+                                {
+                                    poLine.ReceivedQuantity = Math.Max(0, poLine.ReceivedQuantity - line.Quantity);
+                                }
+                            }
+
+                            bool anyReceived = po.Lines.Any(pl => pl.ReceivedQuantity > 0);
+                            po.Status = anyReceived ? PurchaseOrderStatus.PartiallyReceived : PurchaseOrderStatus.Ordered;
+                            po.UpdatedAtUtc = now;
+                        }
+                    }
 
                     await _dbContext.SaveChangesAsync(cancellationToken);
                     await transaction.CommitAsync(cancellationToken);

@@ -1,0 +1,502 @@
+@page "/operations/returns"
+@attribute [Authorize]
+@inject IStockReturnService ReturnService
+@inject IWarehouseService WarehouseService
+@inject ISupplierService SupplierService
+@inject ICustomerService CustomerService
+@inject IProductService ProductService
+@inject IUserContext UserContext
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Retur Barang — WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="px-0 py-2 mb-2" />
+
+    <div class="d-flex flex-wrap justify-space-between align-center mb-4 gap-2">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Retur Barang (Returns)</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Pengelolaan retur pembelian ke pemasok dan retur penjualan dari pelanggan ke status persediaan layak/karantina</MudText>
+        </div>
+        <AuthorizeView Policy="@Permissions.StockReturnCreate">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AssignmentReturn" OnClick="OpenCreateDialog">
+                    Buat Retur Baru
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </div>
+
+    <MudCard Elevation="2">
+        <MudCardContent Class="pa-4">
+            <!-- Filter Bar -->
+            <MudGrid Class="mb-3" Spacing="2">
+                <MudItem xs="12" sm="6" md="4">
+                    <MudTextField @bind-Value="_searchString"
+                                  Placeholder="Cari nomor retur, dokumen asal, alasan..."
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  DebounceInterval="400"
+                                  OnDebounceIntervalElapsed="OnSearchChanged"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="Guid?" Value="_selectedWarehouseId" ValueChanged="OnWarehouseChanged" Label="Gudang" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="Guid?" Value="null">Semua Gudang</MudSelectItem>
+                        @foreach (var wh in _warehouses)
+                        {
+                            <MudSelectItem T="Guid?" Value="@((Guid?)wh.Id)">@wh.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="2">
+                    <MudSelect T="StockReturnType?" Value="_selectedType" ValueChanged="OnTypeChanged" Label="Tipe Retur" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="StockReturnType?" Value="null">Semua Tipe</MudSelectItem>
+                        <MudSelectItem T="StockReturnType?" Value="StockReturnType.ReturnToSupplier">Ke Pemasok</MudSelectItem>
+                        <MudSelectItem T="StockReturnType?" Value="StockReturnType.ReturnFromCustomer">Dari Pelanggan</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="StockReturnStatus?" Value="_selectedStatus" ValueChanged="OnStatusChanged" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="StockReturnStatus?" Value="null">Semua Status</MudSelectItem>
+                        <MudSelectItem T="StockReturnStatus?" Value="StockReturnStatus.Draft">Draft</MudSelectItem>
+                        <MudSelectItem T="StockReturnStatus?" Value="StockReturnStatus.PendingApproval">Menunggu Approval</MudSelectItem>
+                        <MudSelectItem T="StockReturnStatus?" Value="StockReturnStatus.Approved">Approved</MudSelectItem>
+                        <MudSelectItem T="StockReturnStatus?" Value="StockReturnStatus.Posted">Posted (Selesai)</MudSelectItem>
+                        <MudSelectItem T="StockReturnStatus?" Value="StockReturnStatus.Rejected">Ditolak</MudSelectItem>
+                        <MudSelectItem T="StockReturnStatus?" Value="StockReturnStatus.Cancelled">Dibatalkan</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <!-- Table -->
+            <MudTable T="StockReturnDto"
+                      ServerData="LoadServerData"
+                      @ref="_table"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Elevation="0">
+                <HeaderContent>
+                    <MudTh>No. Retur</MudTh>
+                    <MudTh>Tanggal</MudTh>
+                    <MudTh>Tipe</MudTh>
+                    <MudTh>Pihak Terkait</MudTh>
+                    <MudTh>Gudang</MudTh>
+                    <MudTh>Pembuat</MudTh>
+                    <MudTh Style="text-align:center;">Status</MudTh>
+                    <MudTh Style="text-align:right;">Aksi</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="No. Retur" Class="font-weight-bold text-primary">@context.ReturnNumber</MudTd>
+                    <MudTd DataLabel="Tanggal">@context.ReturnDate.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd DataLabel="Tipe">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(context.ReturnType == StockReturnType.ReturnToSupplier ? Color.Warning : Color.Info)">
+                            @(context.ReturnType == StockReturnType.ReturnToSupplier ? "Ke Pemasok" : "Dari Pelanggan")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Pihak Terkait">@(context.SupplierName ?? context.CustomerName ?? "-")</MudTd>
+                    <MudTd DataLabel="Gudang">@context.WarehouseName</MudTd>
+                    <MudTd DataLabel="Pembuat">@context.CreatedByUserName</MudTd>
+                    <MudTd DataLabel="Status" Style="text-align:center;">
+                        @GetStatusChip(context.Status)
+                    </MudTd>
+                    <MudTd DataLabel="Aksi" Style="text-align:right;">
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true">
+                            <MudMenuItem Icon="@Icons.Material.Filled.Visibility" OnClick="() => ViewDetails(context.Id)">Lihat Rincian</MudMenuItem>
+
+                            @if (context.Status == StockReturnStatus.Draft)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.Send" IconColor="Color.Info" OnClick="() => SubmitApproval(context)">Ajukan Approval</MudMenuItem>
+                            }
+
+                            @if (context.Status == StockReturnStatus.PendingApproval)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success" OnClick="() => ApproveReturn(context)">Setujui (Approve)</MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.Cancel" IconColor="Color.Error" OnClick="() => RejectReturn(context)">Tolak (Reject)</MudMenuItem>
+                            }
+
+                            @if (context.Status == StockReturnStatus.Approved)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.PostAdd" IconColor="Color.Success" OnClick="() => PostReturn(context)">Posting Mutasi Retur</MudMenuItem>
+                            }
+
+                            @if (context.Status != StockReturnStatus.Posted && context.Status != StockReturnStatus.Cancelled)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.Close" IconColor="Color.Error" OnClick="() => CancelReturn(context)">Batalkan</MudMenuItem>
+                            }
+                        </MudMenu>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Align="Align.Center" Class="py-6 text-muted">Belum ada dokumen retur</MudText>
+                </NoRecordsContent>
+                <PagerContent>
+                    <MudTablePager RowsPerPageString="Baris per halaman:" />
+                </PagerContent>
+            </MudTable>
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
+
+<!-- Dialog Detail -->
+<MudDialog @bind-Visible="_isDetailOpen" Options="_dialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.AssignmentReturn" Class="mr-2" />
+            <MudText Typo="Typo.h6">Rincian Dokumen Retur: @_activeReturn?.ReturnNumber</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_activeReturn != null)
+        {
+            <MudGrid Class="mb-4">
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Gudang</MudText>
+                    <MudText Typo="Typo.body1" Class="font-weight-bold">@_activeReturn.WarehouseName</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Pihak Terkait</MudText>
+                    <MudText Typo="Typo.body1" Class="font-weight-bold">@(_activeReturn.SupplierName ?? _activeReturn.CustomerName ?? "-")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Dokumen Asal</MudText>
+                    <MudText Typo="Typo.body2">@(_activeReturn.ReferenceDocumentNumber ?? "-")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Status Retur</MudText>
+                    <div class="mt-1">@GetStatusChip(_activeReturn.Status)</div>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Alasan Retur</MudText>
+                    <MudText Typo="Typo.body2">@(_activeReturn.Reason ?? "-")</MudText>
+                </MudItem>
+            </MudGrid>
+
+            <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">Item Barang Retur</MudText>
+            <MudTable Items="_activeReturn.Lines" Dense="true" Elevation="1" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Barang (SKU)</MudTh>
+                    <MudTh Style="text-align:right;">Jumlah</MudTh>
+                    <MudTh Style="text-align:right;">Harga / Nilai Satuan</MudTh>
+                    <MudTh Style="text-align:center;">Status Alokasi</MudTh>
+                    <MudTh>Catatan</MudTh>
+                </HeaderContent>
+                <RowTemplate Context="line">
+                    <MudTd>@line.ProductName (@line.ProductSku)</MudTd>
+                    <MudTd Style="text-align:right;" Class="font-weight-bold">@line.Quantity.ToString("N0") @line.UnitName</MudTd>
+                    <MudTd Style="text-align:right;">Rp @line.UnitPrice.ToString("N0")</MudTd>
+                    <MudTd Style="text-align:center;">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(line.TargetStockStatus == StockStatus.Available ? Color.Success : Color.Warning)">
+                            @line.TargetStockStatus
+                        </MudChip>
+                    </MudTd>
+                    <MudTd>@(line.Notes ?? "-")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isDetailOpen = false">Tutup</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Dialog Buat Retur Baru -->
+<MudDialog @bind-Visible="_isCreateOpen" Options="_dialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.AssignmentReturn" Class="mr-2" />
+            <MudText Typo="Typo.h6">Buat Dokumen Retur Baru</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="StockReturnType" @bind-Value="_createModel.ReturnType" Label="Tipe Retur *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="StockReturnType.ReturnToSupplier">Retur ke Pemasok (Purchase Return)</MudSelectItem>
+                    <MudSelectItem Value="StockReturnType.ReturnFromCustomer">Retur dari Pelanggan (Sales Return)</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid" @bind-Value="_createModel.WarehouseId" Label="Gudang *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var wh in _warehouses)
+                    {
+                        <MudSelectItem Value="@wh.Id">@wh.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+
+            @if (_createModel.ReturnType == StockReturnType.ReturnToSupplier)
+            {
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="Guid?" @bind-Value="_createModel.SupplierId" Label="Pemasok Tujuan *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var s in _suppliers)
+                        {
+                            <MudSelectItem T="Guid?" Value="@((Guid?)s.Id)">@s.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            }
+            else
+            {
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="Guid?" @bind-Value="_createModel.CustomerId" Label="Pelanggan Asal *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var c in _customers)
+                        {
+                            <MudSelectItem T="Guid?" Value="@((Guid?)c.Id)">@c.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            }
+
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_createModel.ReferenceDocumentNumber" Label="No. Dokumen Asal (PO / GR / Surat Jalan)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_createModel.Reason" Label="Alasan Retur *" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" />
+            </MudItem>
+        </MudGrid>
+
+        <div class="d-flex justify-space-between align-center mt-4 mb-2">
+            <MudText Typo="Typo.subtitle2" Class="font-weight-bold">Daftar Barang Retur</MudText>
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddCreateLine">
+                Tambah Baris
+            </MudButton>
+        </div>
+
+        @foreach (var (line, index) in _createModel.Lines.Select((l, i) => (l, i)))
+        {
+            <MudGrid Class="align-center mb-2 pa-2 border rounded" Spacing="2">
+                <MudItem xs="12" sm="4">
+                    <MudSelect T="Guid" @bind-Value="line.ProductId" Label="Barang *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var p in _products)
+                        {
+                            <MudSelectItem Value="@p.Id">@p.Name (@p.Sku)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudNumericField @bind-Value="line.Quantity" Label="Jumlah *" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" />
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudSelect T="StockStatus" @bind-Value="line.TargetStockStatus" Label="Status Alokasi *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem Value="StockStatus.Available">Available (Bagus)</MudSelectItem>
+                        <MudSelectItem Value="StockStatus.Quarantine">Quarantine (Karantina)</MudSelectItem>
+                        <MudSelectItem Value="StockStatus.Damaged">Damaged (Rusak)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="2" Class="d-flex justify-end">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="() => RemoveCreateLine(index)" />
+                </MudItem>
+            </MudGrid>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isCreateOpen = false">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveCreateReturn" Disabled="_isSaving">
+            @if (_isSaving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Simpan Retur (Draft)
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private MudTable<StockReturnDto>? _table;
+    private string? _searchString;
+    private Guid? _selectedWarehouseId;
+    private StockReturnType? _selectedType;
+    private StockReturnStatus? _selectedStatus;
+    private bool _isDetailOpen;
+    private bool _isCreateOpen;
+    private bool _isSaving;
+    private StockReturnDto? _activeReturn;
+
+    private CreateStockReturnCommand _createModel = new();
+    private List<WarehouseDto> _warehouses = new();
+    private List<SupplierDto> _suppliers = new();
+    private List<CustomerDto> _customers = new();
+    private List<ProductDto> _products = new();
+
+    private readonly List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new BreadcrumbItem("Utama", "/"),
+        new BreadcrumbItem("Operasional", null, disabled: true),
+        new BreadcrumbItem("Retur Barang", null, disabled: true)
+    };
+
+    private readonly DialogOptions _dialogOptions = new()
+    {
+        MaxWidth = MaxWidth.Medium,
+        FullWidth = true,
+        CloseButton = true
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _warehouses = (await WarehouseService.GetActiveWarehousesAsync()).ToList();
+        _suppliers = (await SupplierService.GetActiveSuppliersAsync()).ToList();
+        _customers = (await CustomerService.GetActiveCustomersAsync()).ToList();
+        _products = (await ProductService.GetActiveProductsAsync()).ToList();
+    }
+
+    private async Task<TableData<StockReturnDto>> LoadServerData(TableState state, CancellationToken ct)
+    {
+        var query = new StockReturnFilterQuery
+        {
+            Page = state.Page + 1,
+            PageSize = state.PageSize,
+            SearchTerm = _searchString,
+            WarehouseId = _selectedWarehouseId,
+            ReturnType = _selectedType,
+            Status = _selectedStatus
+        };
+
+        var result = await ReturnService.GetReturnsAsync(query);
+        if (result.Succeeded && result.Data != null)
+        {
+            return new TableData<StockReturnDto>
+            {
+                TotalItems = result.Data.TotalCount,
+                Items = result.Data.Items
+            };
+        }
+
+        return new TableData<StockReturnDto> { TotalItems = 0, Items = Array.Empty<StockReturnDto>() };
+    }
+
+    private void OnSearchChanged() => _table?.ReloadServerData();
+    private void OnWarehouseChanged(Guid? whId) { _selectedWarehouseId = whId; _table?.ReloadServerData(); }
+    private void OnTypeChanged(StockReturnType? tp) { _selectedType = tp; _table?.ReloadServerData(); }
+    private void OnStatusChanged(StockReturnStatus? st) { _selectedStatus = st; _table?.ReloadServerData(); }
+
+    private async Task ViewDetails(Guid id)
+    {
+        var res = await ReturnService.GetReturnByIdAsync(id);
+        if (res.Succeeded && res.Data != null)
+        {
+            _activeReturn = res.Data;
+            _isDetailOpen = true;
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal memuat detail retur", Severity.Error);
+    }
+
+    private void OpenCreateDialog()
+    {
+        _createModel = new CreateStockReturnCommand
+        {
+            WarehouseId = _warehouses.FirstOrDefault()?.Id ?? Guid.Empty,
+            ReturnType = StockReturnType.ReturnToSupplier,
+            Lines = new List<CreateStockReturnLineDto> { new() { Quantity = 1 } }
+        };
+        _isCreateOpen = true;
+    }
+
+    private void AddCreateLine() => _createModel.Lines.Add(new CreateStockReturnLineDto { Quantity = 1 });
+    private void RemoveCreateLine(int index)
+    {
+        if (_createModel.Lines.Count > 1) _createModel.Lines.RemoveAt(index);
+    }
+
+    private async Task SaveCreateReturn()
+    {
+        if (_createModel.WarehouseId == Guid.Empty || !_createModel.Lines.Any(l => l.ProductId != Guid.Empty))
+        {
+            Snackbar.Add("Mohon pilih gudang dan barang yang akan diretur.", Severity.Warning);
+            return;
+        }
+
+        _isSaving = true;
+        try
+        {
+            var res = await ReturnService.CreateDraftAsync(_createModel, UserContext.UserId ?? Guid.Empty);
+            if (res.Succeeded)
+            {
+                Snackbar.Add("Dokumen retur berhasil dibuat sebagai draf.", Severity.Success);
+                _isCreateOpen = false;
+                await _table!.ReloadServerData();
+            }
+            else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal membuat retur", Severity.Error);
+        }
+        finally { _isSaving = false; }
+    }
+
+    private async Task SubmitApproval(StockReturnDto r)
+    {
+        var res = await ReturnService.SubmitForApprovalAsync(r.Id, UserContext.UserId ?? Guid.Empty);
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Retur {r.ReturnNumber} diajukan untuk approval.", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal mengajukan approval", Severity.Error);
+    }
+
+    private async Task ApproveReturn(StockReturnDto r)
+    {
+        var res = await ReturnService.ApproveAsync(r.Id, UserContext.UserId ?? Guid.Empty);
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Retur {r.ReturnNumber} berhasil disetujui (Approved).", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal menyetujui retur", Severity.Error);
+    }
+
+    private async Task RejectReturn(StockReturnDto r)
+    {
+        var res = await ReturnService.RejectAsync(r.Id, UserContext.UserId ?? Guid.Empty, "Ditolak via web");
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Retur {r.ReturnNumber} ditolak.", Severity.Info);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal menolak retur", Severity.Error);
+    }
+
+    private async Task PostReturn(StockReturnDto r)
+    {
+        var res = await ReturnService.PostAsync(r.Id, UserContext.UserId ?? Guid.Empty, Guid.NewGuid().ToString());
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Retur {r.ReturnNumber} berhasil diposting ke ledger stok persediaan.", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal memposting retur", Severity.Error);
+    }
+
+    private async Task CancelReturn(StockReturnDto r)
+    {
+        var res = await ReturnService.CancelAsync(r.Id, UserContext.UserId ?? Guid.Empty, "Dibatalkan");
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Retur {r.ReturnNumber} telah dibatalkan.", Severity.Info);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal membatalkan retur", Severity.Error);
+    }
+
+    private RenderFragment GetStatusChip(StockReturnStatus status) => builder =>
+    {
+        var (color, label) = status switch
+        {
+            StockReturnStatus.Draft => (Color.Default, "Draft"),
+            StockReturnStatus.PendingApproval => (Color.Warning, "Menunggu Approval"),
+            StockReturnStatus.Approved => (Color.Info, "Approved"),
+            StockReturnStatus.Posted => (Color.Success, "Posted (Selesai)"),
+            StockReturnStatus.Cancelled => (Color.Dark, "Dibatalkan"),
+            StockReturnStatus.Rejected => (Color.Error, "Ditolak"),
+            _ => (Color.Default, status.ToString())
+        };
+
+        builder.OpenComponent<MudChip<string>>(0);
+        builder.AddAttribute(1, "Color", color);
+        builder.AddAttribute(2, "Size", Size.Small);
+        builder.AddAttribute(3, "Variant", Variant.Filled);
+        builder.AddAttribute(4, "ChildContent", (RenderFragment)(b => b.AddContent(5, label)));
+        builder.CloseComponent();
+    };
+}

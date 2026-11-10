@@ -1,0 +1,517 @@
+@page "/operations/incidents"
+@attribute [Authorize]
+@inject IStockIncidentService IncidentService
+@inject IWarehouseService WarehouseService
+@inject IProductService ProductService
+@inject IUserContext UserContext
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Barang Hilang dan Rusak — WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="px-0 py-2 mb-2" />
+
+    <div class="d-flex flex-wrap justify-space-between align-center mb-4 gap-2">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Barang Hilang & Rusak (Stock Incidents)</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Pencatatan kejadian hilang, rusak, kedaluwarsa, karantina, investigasi, approval, dan posting mutasi stok</MudText>
+        </div>
+        <AuthorizeView Policy="@Permissions.StockIncidentManage">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ReportProblem" OnClick="OpenReportDialog">
+                    Lapor Kejadian Baru
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </div>
+
+    <MudCard Elevation="2">
+        <MudCardContent Class="pa-4">
+            <!-- Filter Bar -->
+            <MudGrid Class="mb-3" Spacing="2">
+                <MudItem xs="12" sm="6" md="4">
+                    <MudTextField @bind-Value="_searchString"
+                                  Placeholder="Cari nomor insiden, barang, alasan..."
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  DebounceInterval="400"
+                                  OnDebounceIntervalElapsed="OnSearchChanged"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="Guid?" Value="_selectedWarehouseId" ValueChanged="OnWarehouseChanged" Label="Gudang" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="Guid?" Value="null">Semua Gudang</MudSelectItem>
+                        @foreach (var wh in _warehouses)
+                        {
+                            <MudSelectItem T="Guid?" Value="@((Guid?)wh.Id)">@wh.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="2">
+                    <MudSelect T="StockIncidentCategory?" Value="_selectedCategory" ValueChanged="OnCategoryChanged" Label="Kategori Kejadian" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="StockIncidentCategory?" Value="null">Semua Kategori</MudSelectItem>
+                        <MudSelectItem T="StockIncidentCategory?" Value="StockIncidentCategory.Lost">Hilang</MudSelectItem>
+                        <MudSelectItem T="StockIncidentCategory?" Value="StockIncidentCategory.Damaged">Rusak</MudSelectItem>
+                        <MudSelectItem T="StockIncidentCategory?" Value="StockIncidentCategory.Expired">Kedaluwarsa</MudSelectItem>
+                        <MudSelectItem T="StockIncidentCategory?" Value="StockIncidentCategory.Quarantine">Karantina</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="StockIncidentStatus?" Value="_selectedStatus" ValueChanged="OnStatusChanged" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="StockIncidentStatus?" Value="null">Semua Status</MudSelectItem>
+                        <MudSelectItem T="StockIncidentStatus?" Value="StockIncidentStatus.Reported">Dilaporkan</MudSelectItem>
+                        <MudSelectItem T="StockIncidentStatus?" Value="StockIncidentStatus.UnderInvestigation">Investigasi</MudSelectItem>
+                        <MudSelectItem T="StockIncidentStatus?" Value="StockIncidentStatus.Approved">Approved</MudSelectItem>
+                        <MudSelectItem T="StockIncidentStatus?" Value="StockIncidentStatus.Resolved">Selesai / Diposting</MudSelectItem>
+                        <MudSelectItem T="StockIncidentStatus?" Value="StockIncidentStatus.Rejected">Ditolak</MudSelectItem>
+                        <MudSelectItem T="StockIncidentStatus?" Value="StockIncidentStatus.Cancelled">Dibatalkan</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <!-- Table -->
+            <MudTable T="StockIncidentDto"
+                      ServerData="LoadServerData"
+                      @ref="_table"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Elevation="0">
+                <HeaderContent>
+                    <MudTh>No. Kejadian</MudTh>
+                    <MudTh>Tanggal Lapor</MudTh>
+                    <MudTh>Gudang</MudTh>
+                    <MudTh>Barang</MudTh>
+                    <MudTh Style="text-align:center;">Kategori</MudTh>
+                    <MudTh Style="text-align:right;">Jumlah</MudTh>
+                    <MudTh Style="text-align:right;">Estimasi Nilai</MudTh>
+                    <MudTh>Pelapor</MudTh>
+                    <MudTh Style="text-align:center;">Status</MudTh>
+                    <MudTh Style="text-align:right;">Aksi</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="No. Kejadian" Class="font-weight-bold text-primary">@context.IncidentNumber</MudTd>
+                    <MudTd DataLabel="Tanggal">@context.ReportedAtUtc.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd DataLabel="Gudang">@context.WarehouseName</MudTd>
+                    <MudTd DataLabel="Barang">@context.ProductName</MudTd>
+                    <MudTd DataLabel="Kategori" Style="text-align:center;">
+                        @GetCategoryChip(context.Category)
+                    </MudTd>
+                    <MudTd DataLabel="Jumlah" Style="text-align:right;" Class="font-weight-bold text-danger">@context.Quantity.ToString("N0") @context.UnitName</MudTd>
+                    <MudTd DataLabel="Estimasi Nilai" Style="text-align:right;">Rp @context.EstimatedValue.ToString("N0")</MudTd>
+                    <MudTd DataLabel="Pelapor">@context.ReportedByUserName</MudTd>
+                    <MudTd DataLabel="Status" Style="text-align:center;">
+                        @GetStatusChip(context.Status)
+                    </MudTd>
+                    <MudTd DataLabel="Aksi" Style="text-align:right;">
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true">
+                            <MudMenuItem Icon="@Icons.Material.Filled.Visibility" OnClick="() => ViewDetails(context.Id)">Lihat Detail</MudMenuItem>
+
+                            @if (context.Status == StockIncidentStatus.Reported || context.Status == StockIncidentStatus.UnderInvestigation)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.Search" IconColor="Color.Info" OnClick="() => OpenInvestigateDialog(context)">Catat Investigasi</MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success" OnClick="() => ApproveIncident(context)">Setujui (Approve)</MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.Cancel" IconColor="Color.Error" OnClick="() => RejectIncident(context)">Tolak (Reject)</MudMenuItem>
+                            }
+
+                            @if (context.Status == StockIncidentStatus.Approved)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.DoneAll" IconColor="Color.Success" OnClick="() => OpenResolveDialog(context)">Selesaikan & Mutasi Stok</MudMenuItem>
+                            }
+
+                            @if (context.Status != StockIncidentStatus.Resolved && context.Status != StockIncidentStatus.Cancelled)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.Close" IconColor="Color.Error" OnClick="() => CancelIncident(context)">Batalkan</MudMenuItem>
+                            }
+                        </MudMenu>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Align="Align.Center" Class="py-6 text-muted">Belum ada catatan kejadian hilang / rusak</MudText>
+                </NoRecordsContent>
+                <PagerContent>
+                    <MudTablePager RowsPerPageString="Baris per halaman:" />
+                </PagerContent>
+            </MudTable>
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
+
+<!-- Dialog Detail -->
+<MudDialog @bind-Visible="_isDetailOpen" Options="_dialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.ReportProblem" Class="mr-2" />
+            <MudText Typo="Typo.h6">Rincian Kejadian: @_activeIncident?.IncidentNumber</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_activeIncident != null)
+        {
+            <MudGrid Class="mb-3">
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Gudang & Lokasi</MudText>
+                    <MudText Typo="Typo.body1" Class="font-weight-bold">@_activeIncident.WarehouseName - @(_activeIncident.LocationName ?? "Semua Rak")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Barang</MudText>
+                    <MudText Typo="Typo.body1" Class="font-weight-bold">@_activeIncident.ProductName (@_activeIncident.ProductSku)</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Kategori Kejadian</MudText>
+                    <div class="mt-1">@GetCategoryChip(_activeIncident.Category)</div>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Kuantitas</MudText>
+                    <MudText Typo="Typo.body1" Class="text-danger font-weight-bold">@_activeIncident.Quantity.ToString("N0") @_activeIncident.UnitName</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Estimasi Nilai</MudText>
+                    <MudText Typo="Typo.body1" Color="Color.Primary" Class="font-weight-bold">Rp @_activeIncident.EstimatedValue.ToString("N0")</MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Alasan Kejadian</MudText>
+                    <MudText Typo="Typo.body2">@(_activeIncident.Reason ?? "-")</MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Catatan Pemeriksaan / Investigasi</MudText>
+                    <MudText Typo="Typo.body2" Class="pa-2 border rounded bg-light">@(_activeIncident.InvestigationNotes ?? "Belum ada catatan investigasi")</MudText>
+                </MudItem>
+                @if (!string.IsNullOrWhiteSpace(_activeIncident.ActionTaken))
+                {
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Tindakan Penyelesaian</MudText>
+                        <MudText Typo="Typo.body2" Class="pa-2 border rounded bg-success-subtle">@_activeIncident.ActionTaken</MudText>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isDetailOpen = false">Tutup</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Dialog Lapor Baru -->
+<MudDialog @bind-Visible="_isCreateOpen" Options="_dialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Class="mr-2" />
+            <MudText Typo="Typo.h6">Laporkan Kejadian Barang Hilang / Rusak</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid" @bind-Value="_createModel.WarehouseId" Label="Pilih Gudang *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var wh in _warehouses)
+                    {
+                        <MudSelectItem Value="@wh.Id">@wh.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid" @bind-Value="_createModel.ProductId" Label="Pilih Barang *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var p in _products)
+                    {
+                        <MudSelectItem Value="@p.Id">@p.Name (@p.Sku)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="StockIncidentCategory" @bind-Value="_createModel.Category" Label="Kategori Kejadian *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="StockIncidentCategory.Lost">Hilang (Lost)</MudSelectItem>
+                    <MudSelectItem Value="StockIncidentCategory.Damaged">Rusak (Damaged)</MudSelectItem>
+                    <MudSelectItem Value="StockIncidentCategory.Expired">Kedaluwarsa (Expired)</MudSelectItem>
+                    <MudSelectItem Value="StockIncidentCategory.Quarantine">Karantina (Quarantine)</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_createModel.Quantity" Label="Jumlah Unit *" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_createModel.Reason" Label="Alasan / Kronologi Kejadian *" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isCreateOpen = false">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveReportIncident" Disabled="_isSaving">
+            @if (_isSaving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Kirim Laporan
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Dialog Investigasi -->
+<MudDialog @bind-Visible="_isInvestigateOpen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Catat Hasil Investigasi Kejadian</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_investigationNotes" Label="Catatan Hasil Pemeriksaan Lapangan *" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="4" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isInvestigateOpen = false">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveInvestigation">Simpan Investigasi</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Dialog Penyelesaian Mutasi -->
+<MudDialog @bind-Visible="_isResolveOpen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Selesaikan Kejadian & Mutasi Stok Ledger</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Tindakan ini akan memposting mutasi stok ke ledger:
+            @if (_activeIncident?.Category == StockIncidentCategory.Lost)
+            {
+                <span class="text-danger font-weight-bold">Pengurangan stok persediaan sebesar @_activeIncident.Quantity unit.</span>
+            }
+            else
+            {
+                <span class="text-warning font-weight-bold">Pemindahan stok @_activeIncident?.Quantity unit ke status Karantina/Rusak.</span>
+            }
+        </MudText>
+        <MudTextField @bind-Value="_actionTaken" Label="Tindakan Penyelesaian / Instruksi *" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isResolveOpen = false">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="ExecuteResolve">Konfirmasi & Posting</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private MudTable<StockIncidentDto>? _table;
+    private string? _searchString;
+    private Guid? _selectedWarehouseId;
+    private StockIncidentCategory? _selectedCategory;
+    private StockIncidentStatus? _selectedStatus;
+    private bool _isDetailOpen;
+    private bool _isCreateOpen;
+    private bool _isInvestigateOpen;
+    private bool _isResolveOpen;
+    private bool _isSaving;
+    private StockIncidentDto? _activeIncident;
+
+    private CreateStockIncidentCommand _createModel = new();
+    private string _investigationNotes = string.Empty;
+    private string _actionTaken = string.Empty;
+
+    private List<WarehouseDto> _warehouses = new();
+    private List<ProductDto> _products = new();
+
+    private readonly List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new BreadcrumbItem("Utama", "/"),
+        new BreadcrumbItem("Operasional", null, disabled: true),
+        new BreadcrumbItem("Barang Hilang & Rusak", null, disabled: true)
+    };
+
+    private readonly DialogOptions _dialogOptions = new()
+    {
+        MaxWidth = MaxWidth.Medium,
+        FullWidth = true,
+        CloseButton = true
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _warehouses = (await WarehouseService.GetActiveWarehousesAsync()).ToList();
+        _products = (await ProductService.GetActiveProductsAsync()).ToList();
+    }
+
+    private async Task<TableData<StockIncidentDto>> LoadServerData(TableState state, CancellationToken ct)
+    {
+        var query = new StockIncidentFilterQuery
+        {
+            Page = state.Page + 1,
+            PageSize = state.PageSize,
+            SearchTerm = _searchString,
+            WarehouseId = _selectedWarehouseId,
+            Category = _selectedCategory,
+            Status = _selectedStatus
+        };
+
+        var result = await IncidentService.GetIncidentsAsync(query);
+        if (result.Succeeded && result.Data != null)
+        {
+            return new TableData<StockIncidentDto>
+            {
+                TotalItems = result.Data.TotalCount,
+                Items = result.Data.Items
+            };
+        }
+
+        return new TableData<StockIncidentDto> { TotalItems = 0, Items = Array.Empty<StockIncidentDto>() };
+    }
+
+    private void OnSearchChanged() => _table?.ReloadServerData();
+    private void OnWarehouseChanged(Guid? whId) { _selectedWarehouseId = whId; _table?.ReloadServerData(); }
+    private void OnCategoryChanged(StockIncidentCategory? cat) { _selectedCategory = cat; _table?.ReloadServerData(); }
+    private void OnStatusChanged(StockIncidentStatus? st) { _selectedStatus = st; _table?.ReloadServerData(); }
+
+    private async Task ViewDetails(Guid id)
+    {
+        var res = await IncidentService.GetIncidentByIdAsync(id);
+        if (res.Succeeded && res.Data != null)
+        {
+            _activeIncident = res.Data;
+            _isDetailOpen = true;
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal memuat detail kejadian", Severity.Error);
+    }
+
+    private void OpenReportDialog()
+    {
+        _createModel = new CreateStockIncidentCommand
+        {
+            WarehouseId = _warehouses.FirstOrDefault()?.Id ?? Guid.Empty,
+            ProductId = _products.FirstOrDefault()?.Id ?? Guid.Empty,
+            Category = StockIncidentCategory.Lost,
+            Quantity = 1
+        };
+        _isCreateOpen = true;
+    }
+
+    private async Task SaveReportIncident()
+    {
+        if (_createModel.WarehouseId == Guid.Empty || _createModel.ProductId == Guid.Empty || string.IsNullOrWhiteSpace(_createModel.Reason))
+        {
+            Snackbar.Add("Mohon lengkapi gudang, barang, dan alasan kejadian.", Severity.Warning);
+            return;
+        }
+
+        _isSaving = true;
+        try
+        {
+            var res = await IncidentService.ReportIncidentAsync(_createModel, UserContext.UserId ?? Guid.Empty);
+            if (res.Succeeded)
+            {
+                Snackbar.Add("Laporan kejadian berhasil disimpan. Stok sistem belum berubah sebelum investigasi & disetujui.", Severity.Success);
+                _isCreateOpen = false;
+                await _table!.ReloadServerData();
+            }
+            else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal melaporkan kejadian", Severity.Error);
+        }
+        finally { _isSaving = false; }
+    }
+
+    private void OpenInvestigateDialog(StockIncidentDto i)
+    {
+        _activeIncident = i;
+        _investigationNotes = i.InvestigationNotes ?? string.Empty;
+        _isInvestigateOpen = true;
+    }
+
+    private async Task SaveInvestigation()
+    {
+        if (_activeIncident == null) return;
+        var res = await IncidentService.UpdateInvestigationAsync(_activeIncident.Id, _investigationNotes, UserContext.UserId ?? Guid.Empty);
+        if (res.Succeeded)
+        {
+            Snackbar.Add("Hasil investigasi berhasil dicatat.", Severity.Success);
+            _isInvestigateOpen = false;
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal menyimpan investigasi", Severity.Error);
+    }
+
+    private async Task ApproveIncident(StockIncidentDto i)
+    {
+        var res = await IncidentService.ApproveAsync(i.Id, UserContext.UserId ?? Guid.Empty);
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Laporan kejadian {i.IncidentNumber} berhasil disetujui (Approved).", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal menyetujui kejadian", Severity.Error);
+    }
+
+    private async Task RejectIncident(StockIncidentDto i)
+    {
+        var res = await IncidentService.RejectAsync(i.Id, UserContext.UserId ?? Guid.Empty, "Ditolak via web");
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Laporan kejadian {i.IncidentNumber} ditolak.", Severity.Info);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal menolak kejadian", Severity.Error);
+    }
+
+    private void OpenResolveDialog(StockIncidentDto i)
+    {
+        _activeIncident = i;
+        _actionTaken = $"Penyelesaian mutasi stok kejadian {i.Category}";
+        _isResolveOpen = true;
+    }
+
+    private async Task ExecuteResolve()
+    {
+        if (_activeIncident == null) return;
+        var res = await IncidentService.ResolveAsync(_activeIncident.Id, _actionTaken, UserContext.UserId ?? Guid.Empty, Guid.NewGuid().ToString());
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Kejadian {_activeIncident.IncidentNumber} berhasil diselesaikan dan mutasi stok telah diposting.", Severity.Success);
+            _isResolveOpen = false;
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal menyelesaikan kejadian", Severity.Error);
+    }
+
+    private async Task CancelIncident(StockIncidentDto i)
+    {
+        var res = await IncidentService.CancelAsync(i.Id, UserContext.UserId ?? Guid.Empty, "Dibatalkan");
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Laporan {i.IncidentNumber} telah dibatalkan.", Severity.Info);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal membatalkan laporan", Severity.Error);
+    }
+
+    private RenderFragment GetCategoryChip(StockIncidentCategory cat) => builder =>
+    {
+        var (color, label) = cat switch
+        {
+            StockIncidentCategory.Lost => (Color.Error, "Hilang (Lost)"),
+            StockIncidentCategory.Damaged => (Color.Warning, "Rusak (Damaged)"),
+            StockIncidentCategory.Expired => (Color.Dark, "Kedaluwarsa (Expired)"),
+            StockIncidentCategory.Quarantine => (Color.Secondary, "Karantina"),
+            _ => (Color.Default, cat.ToString())
+        };
+
+        builder.OpenComponent<MudChip<string>>(0);
+        builder.AddAttribute(1, "Color", color);
+        builder.AddAttribute(2, "Size", Size.Small);
+        builder.AddAttribute(3, "Variant", Variant.Filled);
+        builder.AddAttribute(4, "ChildContent", (RenderFragment)(b => b.AddContent(5, label)));
+        builder.CloseComponent();
+    };
+
+    private RenderFragment GetStatusChip(StockIncidentStatus status) => builder =>
+    {
+        var (color, label) = status switch
+        {
+            StockIncidentStatus.Reported => (Color.Default, "Dilaporkan"),
+            StockIncidentStatus.UnderInvestigation => (Color.Info, "Investigasi"),
+            StockIncidentStatus.Approved => (Color.Warning, "Approved"),
+            StockIncidentStatus.Resolved => (Color.Success, "Selesai (Diposting)"),
+            StockIncidentStatus.Cancelled => (Color.Dark, "Dibatalkan"),
+            StockIncidentStatus.Rejected => (Color.Error, "Ditolak"),
+            _ => (Color.Default, status.ToString())
+        };
+
+        builder.OpenComponent<MudChip<string>>(0);
+        builder.AddAttribute(1, "Color", color);
+        builder.AddAttribute(2, "Size", Size.Small);
+        builder.AddAttribute(3, "Variant", Variant.Filled);
+        builder.AddAttribute(4, "ChildContent", (RenderFragment)(b => b.AddContent(5, label)));
+        builder.CloseComponent();
+    };
+}

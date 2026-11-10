@@ -30,13 +30,15 @@
         </Authorized>
     </AuthorizeView>
 
+    <MudText Typo="Typo.subtitle2" Class="px-4 pt-4 pb-1 text-muted font-weight-bold">WORKFLOW OPERASIONAL (FASE 2)</MudText>
+    <MudNavLink Href="/operations/purchase-orders" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Assignment">Purchase Order (PO)</MudNavLink>
+    <MudNavLink Href="/operations/transfers" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.SwapHoriz">Transfer Antar-Gudang</MudNavLink>
+    <MudNavLink Href="/operations/opname" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.FactCheck">Stock Opname</MudNavLink>
+    <MudNavLink Href="/operations/incidents" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ReportProblem">Barang Hilang / Rusak</MudNavLink>
+    <MudNavLink Href="/operations/returns" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AssignmentReturn">Retur Barang</MudNavLink>
+
     <MudDivider Class="my-3" />
-    <MudNavGroup Title="Fase 2 (Belum Tersedia)" Icon="@Icons.Material.Filled.HourglassEmpty" Expanded="false">
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Assignment">Purchase Order (PO)</MudNavLink>
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.AssignmentReturn">Retur Barang</MudNavLink>
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.SwapHoriz">Transfer Antar-Gudang</MudNavLink>
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.FactCheck">Stock Opname</MudNavLink>
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.ReportProblem">Barang Hilang / Rusak</MudNavLink>
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Notifications">Notifikasi In-App</MudNavLink>
+    <MudNavGroup Title="Fase Lanjutan (Belum Tersedia)" Icon="@Icons.Material.Filled.HourglassEmpty" Expanded="false">
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Notifications">Notifikasi In-App (Tahap 6)</MudNavLink>
     </MudNavGroup>
 </MudNavMenu>

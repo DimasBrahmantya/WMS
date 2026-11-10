@@ -197,3 +197,48 @@ Dokumen ini mencatat keputusan arsitektur, teknis, dan verifikasi fondasi yang d
   - Halaman `/admin/audit-logs` dibatasi untuk role `SuperAdmin`, `Supervisor`, dan `Auditor` (`audit.view`).
   - Dilengkapi dialog detail perubahan dengan penyorotan perbandingan *Old Values* vs *New Values*, *Correlation ID*, *IP Address*, dan alasan transaksi.
   - Seluruh timestamp UTC dikonversi ke waktu lokal Jakarta menggunakan utility `JakartaTime.cs`.
+
+---
+
+## Keputusan 15: Pemisahan Tugas (Separation of Duties - SoD) pada Persetujuan Dokumen Operasional
+
+- **Status**: Diputuskan & Diimplementasikan (Tahap 5)
+- **Konteks**:
+  - Bagian 26.1 spesifikasi WMS: *Pemisahan Tugas (Separation of Duties): pembuat dokumen diblokir dari menyetujui dokumen yang dibuatnya sendiri.*
+  - Pelanggaran SoD harus dicegah secara deterministik di domain/application layer sebelum mutasi persetujuan dieksekusi, menghasilkan kode error bisnis `BUSINESS_RULE_VIOLATION` yang jelas dan dicatat di `audit_logs`.
+- **Keputusan**:
+  - Implementasi komponen terpusat `SeparationOfDutiesGuard.EnsureDistinctUsers(creatorUserId, approverUserId, documentType, documentNumber)` di `Wms.Application.Common.Guards`.
+  - Jika `creatorUserId == approverUserId`, guard melempar `ValidationException` atau mengembalikan `Result.Failure` yang membatalkan transaksi seketika.
+  - Guard diterapkan seragam pada seluruh approval operasional: Purchase Order, Stock Transfer, Stock Opname, Stock Return, dan Stock Incident.
+  - Diberikan perlindungan unit test menyeluruh (`SeparationOfDutiesGuardTests`) dan skenario integration test untuk membuktikan penolakan otomatis self-approval.
+
+---
+
+## Keputusan 16: Alur Kerja Operasional, Transisi Status, dan Integrasi Mutasi Ledger Atomik
+
+- **Status**: Diputuskan & Diimplementasikan (Tahap 5)
+- **Konteks**:
+  - Bagian 10-14 & 26.1 spesifikasi: PO dengan penerimaan bertahap/parsial, transfer antar-gudang berstatus `in_transit`, stock opname (snapshot cut-off, recount, variance value, approval, ledger posting), retur persediaan (ke pemasok vs dari pelanggan), dan kejadian barang hilang/rusak.
+- **Keputusan**:
+  1. **Purchase Order (PO)**:
+     - Siklus status: `Draft` $\rightarrow$ `PendingApproval` $\rightarrow$ `Approved` $\rightarrow$ `Ordered` $\rightarrow$ `PartiallyReceived` / `Received`.
+     - Penerimaan barang diintegrasikan dengan `GoodsReceipt`: saat GR diposting dengan referensi PO, kuantitas `ReceivedQuantity` pada baris PO bertambah dan status PO diperbarui otomatis.
+     - Jika dokumen penerimaan di-reversal, kuantitas penerimaan di baris PO di-rollback atomik dan status PO dikembalikan ke `PartiallyReceived` atau `Ordered`.
+  2. **Transfer Antar-Gudang (In-Transit)**:
+     - Siklus status: `Draft` $\rightarrow$ `PendingApproval` $\rightarrow$ `Approved` $\rightarrow$ `InTransit` $\rightarrow$ `PartiallyReceived` / `Received`.
+     - Pengiriman (`Dispatch`): stok fisik gudang asal berkurang seketika via movement `TransferOut`, kuantitas tercatat mengambang dalam perjalanan (`in_transit`).
+     - Penerimaan (`Receive`): stok fisik gudang tujuan bertambah via movement `TransferIn`, valuasi rata-rata bergerak di gudang tujuan dihitung ulang berdasarkan kuantitas dan nilai asal.
+  3. **Stock Opname**:
+     - Siklus status: `Draft` $\rightarrow$ `Counting` $\rightarrow$ `Review` $\rightarrow$ `PendingApproval` $\rightarrow$ `Approved` $\rightarrow$ `Posted`.
+     - Saat sesi dimulai (`StartCounting`), snapshot saldo sistem (`SystemSnapshotQuantity` & `SystemSnapshotAvgCost`) dibekukan sebagai baseline cut-off.
+     - Mendukung input hitung lapangan ke-1 dan *Recount* jika terjadi selisih. Selisih kuantitas (`VarianceQuantity`) dan selisih nilai finansial (`VarianceValue`) dihitung otomatis.
+     - Posting penyesuaian wajib persetujuan Supervisor dan mengeksekusi posting atomik ke `stock_movements` (MovementType `StockAdjustmentIn`/`Out`) serta memperbarui saldo fisik dan valuasi moving average.
+  4. **Retur Persediaan**:
+     - Mendukung Retur ke Pemasok (`ReturnToSupplier`: mengurangi stok fisik) dan Retur dari Pelanggan (`ReturnFromCustomer`: menambah stok fisik dengan dukungan status alokasi `Available`, `Quarantine`, atau `Damaged`).
+  5. **Kejadian Hilang / Rusak (Stock Incident)**:
+     - Siklus status: `Reported` $\rightarrow$ `UnderInvestigation` $\rightarrow$ `Approved` $\rightarrow$ `Resolved`.
+     - Pelaporan kejadian tidak mengubah saldo stok fisik sebelum disetujui dan diselesaikan.
+     - Resolusi kejadian: Kategori Hilang (`Lost`) memotong stok persediaan, kategori Rusak/Karantina memindahkan saldo antar status stok via movement `StockIncident`.
+  6. **Audit Trail Komprehensif**:
+     - Seluruh aksi pembuatan, approval, rejection, penandatanganan perintah, dan posting/pembatalan dicatat ke `audit_logs` melalui `IAppAuditService`.
+

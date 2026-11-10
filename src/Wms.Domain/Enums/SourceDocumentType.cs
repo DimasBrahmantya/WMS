@@ -6,6 +6,9 @@ public enum SourceDocumentType
     GoodsIssue = 2,
     StockAdjustment = 3,
     StockTransfer = 4,
-    StockIncident = 5
+    StockIncident = 5,
+    PurchaseOrder = 6,
+    StockReturn = 7,
+    StockOpname = 8
 }
 

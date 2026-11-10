@@ -9,6 +9,9 @@ public enum MovementType
     StockAdjustment = 5,
     RoundingCorrection = 6,
     TransferIn = 7,
-    TransferOut = 8
+    TransferOut = 8,
+    PurchaseReturn = 9,
+    CustomerReturn = 10,
+    StockIncident = 11
 }
 

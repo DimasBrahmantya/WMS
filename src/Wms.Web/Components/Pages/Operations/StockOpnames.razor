@@ -1,0 +1,529 @@
+@page "/operations/opname"
+@attribute [Authorize]
+@inject IStockOpnameService OpnameService
+@inject IWarehouseService WarehouseService
+@inject IUserContext UserContext
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Stock Opname — WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="px-0 py-2 mb-2" />
+
+    <div class="d-flex flex-wrap justify-space-between align-center mb-4 gap-2">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Stock Opname (Penghitungan Fisik)</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Snapshot cut-off saldo, input hitung & recount, selisih kuantitas & nilai, approval, dan posting penyesuaian ledger</MudText>
+        </div>
+        <AuthorizeView Policy="@Permissions.StockOpnameManage">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+                    Sesi Opname Baru
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </div>
+
+    <MudCard Elevation="2">
+        <MudCardContent Class="pa-4">
+            <!-- Filter Bar -->
+            <MudGrid Class="mb-3" Spacing="2">
+                <MudItem xs="12" sm="6" md="4">
+                    <MudTextField @bind-Value="_searchString"
+                                  Placeholder="Cari nomor sesi, gudang, catatan..."
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  DebounceInterval="400"
+                                  OnDebounceIntervalElapsed="OnSearchChanged"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="Guid?" Value="_selectedWarehouseId" ValueChanged="OnWarehouseChanged" Label="Gudang" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="Guid?" Value="null">Semua Gudang</MudSelectItem>
+                        @foreach (var wh in _warehouses)
+                        {
+                            <MudSelectItem T="Guid?" Value="@((Guid?)wh.Id)">@wh.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="StockOpnameStatus?" Value="_selectedStatus" ValueChanged="OnStatusChanged" Label="Status Opname" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="StockOpnameStatus?" Value="null">Semua Status</MudSelectItem>
+                        <MudSelectItem T="StockOpnameStatus?" Value="StockOpnameStatus.Draft">Draft</MudSelectItem>
+                        <MudSelectItem T="StockOpnameStatus?" Value="StockOpnameStatus.Counting">Sedang Dihitung</MudSelectItem>
+                        <MudSelectItem T="StockOpnameStatus?" Value="StockOpnameStatus.Review">Review / Peninjauan</MudSelectItem>
+                        <MudSelectItem T="StockOpnameStatus?" Value="StockOpnameStatus.PendingApproval">Menunggu Approval</MudSelectItem>
+                        <MudSelectItem T="StockOpnameStatus?" Value="StockOpnameStatus.Approved">Approved</MudSelectItem>
+                        <MudSelectItem T="StockOpnameStatus?" Value="StockOpnameStatus.Posted">Posted (Selesai)</MudSelectItem>
+                        <MudSelectItem T="StockOpnameStatus?" Value="StockOpnameStatus.Cancelled">Dibatalkan</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <!-- Table -->
+            <MudTable T="StockOpnameSessionDto"
+                      ServerData="LoadServerData"
+                      @ref="_table"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Elevation="0">
+                <HeaderContent>
+                    <MudTh>No. Sesi</MudTh>
+                    <MudTh>Tanggal Cut-off</MudTh>
+                    <MudTh>Gudang</MudTh>
+                    <MudTh Style="text-align:right;">Selisih Qty</MudTh>
+                    <MudTh Style="text-align:right;">Selisih Nilai (IDR)</MudTh>
+                    <MudTh>Pembuat</MudTh>
+                    <MudTh Style="text-align:center;">Status</MudTh>
+                    <MudTh Style="text-align:right;">Aksi</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="No. Sesi" Class="font-weight-bold text-primary">@context.SessionNumber</MudTd>
+                    <MudTd DataLabel="Tanggal Cut-off">@context.CutoffDate.ToString("dd/MM/yyyy HH:mm")</MudTd>
+                    <MudTd DataLabel="Gudang">@context.WarehouseName</MudTd>
+                    <MudTd DataLabel="Selisih Qty" Style="text-align:right;" Class="@(context.TotalVarianceQuantity < 0 ? "text-danger font-weight-bold" : context.TotalVarianceQuantity > 0 ? "text-success font-weight-bold" : "")">
+                        @context.TotalVarianceQuantity.ToString("+#,##0;-#,##0;0")
+                    </MudTd>
+                    <MudTd DataLabel="Selisih Nilai" Style="text-align:right;" Class="@(context.TotalVarianceValue < 0 ? "text-danger font-weight-bold" : context.TotalVarianceValue > 0 ? "text-success font-weight-bold" : "")">
+                        Rp @context.TotalVarianceValue.ToString("+#,##0;-#,##0;0")
+                    </MudTd>
+                    <MudTd DataLabel="Pembuat">@context.CreatedByUserName</MudTd>
+                    <MudTd DataLabel="Status" Style="text-align:center;">
+                        @GetStatusChip(context.Status)
+                    </MudTd>
+                    <MudTd DataLabel="Aksi" Style="text-align:right;">
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true">
+                            <MudMenuItem Icon="@Icons.Material.Filled.Visibility" OnClick="() => ViewDetails(context.Id)">Lihat Lembar Hitung</MudMenuItem>
+
+                            @if (context.Status == StockOpnameStatus.Draft)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.CameraAlt" IconColor="Color.Primary" OnClick="() => StartCounting(context)">Mulai Hitung & Snapshot</MudMenuItem>
+                            }
+
+                            @if (context.Status == StockOpnameStatus.Counting || context.Status == StockOpnameStatus.Review)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.EditNote" IconColor="Color.Secondary" OnClick="() => OpenCountDialog(context.Id)">Input Hasil Hitung / Recount</MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.Send" IconColor="Color.Info" OnClick="() => SubmitApproval(context)">Ajukan Approval Supervisor</MudMenuItem>
+                            }
+
+                            @if (context.Status == StockOpnameStatus.PendingApproval)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success" OnClick="() => ApproveSession(context)">Setujui (Approve)</MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.Cancel" IconColor="Color.Error" OnClick="() => RejectSession(context)">Tolak (Reject)</MudMenuItem>
+                            }
+
+                            @if (context.Status == StockOpnameStatus.Approved)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.PostAdd" IconColor="Color.Success" OnClick="() => PostAdjustment(context)">Posting Penyesuaian ke Ledger</MudMenuItem>
+                            }
+
+                            @if (context.Status != StockOpnameStatus.Posted && context.Status != StockOpnameStatus.Cancelled)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.Close" IconColor="Color.Error" OnClick="() => CancelSession(context)">Batalkan Sesi</MudMenuItem>
+                            }
+                        </MudMenu>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Align="Align.Center" Class="py-6 text-muted">Belum ada sesi Stock Opname</MudText>
+                </NoRecordsContent>
+                <PagerContent>
+                    <MudTablePager RowsPerPageString="Baris per halaman:" />
+                </PagerContent>
+            </MudTable>
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
+
+<!-- Dialog Detail / Lembar Hasil Opname -->
+<MudDialog @bind-Visible="_isDetailOpen" Options="_dialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.FactCheck" Class="mr-2" />
+            <MudText Typo="Typo.h6">Lembar Hasil Opname: @_activeSession?.SessionNumber</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_activeSession != null)
+        {
+            <MudGrid Class="mb-4">
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Gudang</MudText>
+                    <MudText Typo="Typo.body1" Class="font-weight-bold">@_activeSession.WarehouseName</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Tanggal Snapshot Cut-off</MudText>
+                    <MudText Typo="Typo.body1">@_activeSession.CutoffDate.ToString("dd/MM/yyyy HH:mm")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Status Sesi</MudText>
+                    <div class="mt-1">@GetStatusChip(_activeSession.Status)</div>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Total Selisih Kuantitas</MudText>
+                    <MudText Typo="Typo.h6" Class="@(_activeSession.TotalVarianceQuantity < 0 ? "text-danger font-weight-bold" : _activeSession.TotalVarianceQuantity > 0 ? "text-success font-weight-bold" : "")">
+                        @_activeSession.TotalVarianceQuantity.ToString("+#,##0;-#,##0;0") unit
+                    </MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Total Selisih Nilai (IDR)</MudText>
+                    <MudText Typo="Typo.h6" Class="@(_activeSession.TotalVarianceValue < 0 ? "text-danger font-weight-bold" : _activeSession.TotalVarianceValue > 0 ? "text-success font-weight-bold" : "")">
+                        Rp @_activeSession.TotalVarianceValue.ToString("+#,##0;-#,##0;0")
+                    </MudText>
+                </MudItem>
+            </MudGrid>
+
+            <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">Item Barang & Evaluasi Selisih</MudText>
+            <MudTable Items="_activeSession.Lines" Dense="true" Elevation="1" Bordered="true">
+                <HeaderContent>
+                    <MudTh>Barang (SKU)</MudTh>
+                    <MudTh Style="text-align:right;">Saldo Sistem (Snapshot)</MudTh>
+                    <MudTh Style="text-align:right;">Hitung 1</MudTh>
+                    <MudTh Style="text-align:right;">Recount</MudTh>
+                    <MudTh Style="text-align:right;">Fisik Final</MudTh>
+                    <MudTh Style="text-align:right;">Selisih Qty</MudTh>
+                    <MudTh Style="text-align:right;">Biaya Rata-Rata</MudTh>
+                    <MudTh Style="text-align:right;">Selisih Nilai (IDR)</MudTh>
+                </HeaderContent>
+                <RowTemplate Context="line">
+                    <MudTd>@line.ProductName (@line.ProductSku)</MudTd>
+                    <MudTd Style="text-align:right;">@line.SystemSnapshotQuantity.ToString("N0")</MudTd>
+                    <MudTd Style="text-align:right;">@(line.CountedQuantity.HasValue ? line.CountedQuantity.Value.ToString("N0") : "-")</MudTd>
+                    <MudTd Style="text-align:right;">@(line.RecountQuantity.HasValue ? line.RecountQuantity.Value.ToString("N0") : "-")</MudTd>
+                    <MudTd Style="text-align:right;" Class="font-weight-bold">@line.FinalCountQuantity.ToString("N0")</MudTd>
+                    <MudTd Style="text-align:right;" Class="@(line.VarianceQuantity < 0 ? "text-danger font-weight-bold" : line.VarianceQuantity > 0 ? "text-success font-weight-bold" : "")">
+                        @line.VarianceQuantity.ToString("+#,##0;-#,##0;0")
+                    </MudTd>
+                    <MudTd Style="text-align:right;">@line.SystemSnapshotAvgCost.ToString("N0")</MudTd>
+                    <MudTd Style="text-align:right;" Class="@(line.VarianceValue < 0 ? "text-danger font-weight-bold" : line.VarianceValue > 0 ? "text-success font-weight-bold" : "")">
+                        @line.VarianceValue.ToString("+#,##0;-#,##0;0")
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isDetailOpen = false">Tutup</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Dialog Buat Sesi Baru -->
+<MudDialog @bind-Visible="_isCreateOpen" Options="_dialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.AddBox" Class="mr-2" />
+            <MudText Typo="Typo.h6">Buat Sesi Stock Opname Baru</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12">
+                <MudSelect T="Guid" @bind-Value="_createModel.WarehouseId" Label="Pilih Gudang Opname *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var wh in _warehouses)
+                    {
+                        <MudSelectItem Value="@wh.Id">@wh.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_createModel.Notes" Label="Catatan Sesi / Ruang Lingkup" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isCreateOpen = false">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveCreateSession" Disabled="_isSaving">
+            @if (_isSaving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Simpan Sesi (Draft)
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Dialog Input Hasil Hitung / Recount -->
+<MudDialog @bind-Visible="_isCountOpen" Options="_dialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.EditNote" Class="mr-2" />
+            <MudText Typo="Typo.h6">Input Hasil Hitung Fisik & Recount</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3 text-muted">
+            Masukkan jumlah fisik aktual hasil penghitungan lapangan untuk setiap barang:
+        </MudText>
+
+        @if (_activeSession != null)
+        {
+            @foreach (var line in _activeSession.Lines)
+            {
+                var inputLine = _countModel.Lines.FirstOrDefault(c => c.LineId == line.Id);
+                if (inputLine != null)
+                {
+                    <MudGrid Class="align-center mb-2 pa-2 border rounded" Spacing="2">
+                        <MudItem xs="12" sm="4">
+                            <MudText Typo="Typo.body2" Class="font-weight-bold">@line.ProductName (@line.ProductSku)</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Saldo Sistem: @line.SystemSnapshotQuantity @line.UnitName</MudText>
+                        </MudItem>
+                        <MudItem xs="6" sm="4">
+                            <MudNumericField @bind-Value="inputLine.CountedQuantity"
+                                             Label="Hasil Hitung 1 *"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Min="0" />
+                        </MudItem>
+                        <MudItem xs="6" sm="4">
+                            <MudNumericField @bind-Value="inputLine.RecountQuantity"
+                                             Label="Recount (Bila Selisih)"
+                                             Variant="Variant.Outlined"
+                                             Margin="Margin.Dense"
+                                             Min="0" />
+                        </MudItem>
+                    </MudGrid>
+                }
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isCountOpen = false">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveCounts" Disabled="_isSaving">
+            @if (_isSaving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+            Simpan Hasil Hitung
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private MudTable<StockOpnameSessionDto>? _table;
+    private string? _searchString;
+    private Guid? _selectedWarehouseId;
+    private StockOpnameStatus? _selectedStatus;
+    private bool _isDetailOpen;
+    private bool _isCreateOpen;
+    private bool _isCountOpen;
+    private bool _isSaving;
+    private StockOpnameSessionDto? _activeSession;
+
+    private readonly CreateStockOpnameSessionCommand _createModel = new();
+    private RecordOpnameCountCommand _countModel = new();
+    private List<WarehouseDto> _warehouses = new();
+
+    private readonly List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new BreadcrumbItem("Utama", "/"),
+        new BreadcrumbItem("Operasional", null, disabled: true),
+        new BreadcrumbItem("Stock Opname", null, disabled: true)
+    };
+
+    private readonly DialogOptions _dialogOptions = new()
+    {
+        MaxWidth = MaxWidth.Large,
+        FullWidth = true,
+        CloseButton = true
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _warehouses = (await WarehouseService.GetActiveWarehousesAsync()).ToList();
+    }
+
+    private async Task<TableData<StockOpnameSessionDto>> LoadServerData(TableState state, CancellationToken ct)
+    {
+        var query = new StockOpnameFilterQuery
+        {
+            Page = state.Page + 1,
+            PageSize = state.PageSize,
+            SearchTerm = _searchString,
+            WarehouseId = _selectedWarehouseId,
+            Status = _selectedStatus
+        };
+
+        var result = await OpnameService.GetSessionsAsync(query);
+        if (result.Succeeded && result.Data != null)
+        {
+            return new TableData<StockOpnameSessionDto>
+            {
+                TotalItems = result.Data.TotalCount,
+                Items = result.Data.Items
+            };
+        }
+
+        return new TableData<StockOpnameSessionDto> { TotalItems = 0, Items = Array.Empty<StockOpnameSessionDto>() };
+    }
+
+    private void OnSearchChanged() => _table?.ReloadServerData();
+    private void OnWarehouseChanged(Guid? whId) { _selectedWarehouseId = whId; _table?.ReloadServerData(); }
+    private void OnStatusChanged(StockOpnameStatus? st) { _selectedStatus = st; _table?.ReloadServerData(); }
+
+    private async Task ViewDetails(Guid id)
+    {
+        var res = await OpnameService.GetSessionByIdAsync(id);
+        if (res.Succeeded && res.Data != null)
+        {
+            _activeSession = res.Data;
+            _isDetailOpen = true;
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal memuat detail opname", Severity.Error);
+    }
+
+    private void OpenCreateDialog()
+    {
+        _createModel.WarehouseId = _warehouses.FirstOrDefault()?.Id ?? Guid.Empty;
+        _createModel.Notes = string.Empty;
+        _isCreateOpen = true;
+    }
+
+    private async Task SaveCreateSession()
+    {
+        if (_createModel.WarehouseId == Guid.Empty)
+        {
+            Snackbar.Add("Pilih gudang untuk opname.", Severity.Warning);
+            return;
+        }
+
+        _isSaving = true;
+        try
+        {
+            var res = await OpnameService.CreateSessionAsync(_createModel, UserContext.UserId ?? Guid.Empty);
+            if (res.Succeeded)
+            {
+                Snackbar.Add("Sesi opname berhasil dibuat sebagai draf.", Severity.Success);
+                _isCreateOpen = false;
+                await _table!.ReloadServerData();
+            }
+            else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal membuat sesi", Severity.Error);
+        }
+        finally { _isSaving = false; }
+    }
+
+    private async Task StartCounting(StockOpnameSessionDto s)
+    {
+        var res = await OpnameService.StartCountingAsync(s.Id, UserContext.UserId ?? Guid.Empty);
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Snapshot saldo sistem diambil. Sesi {s.SessionNumber} masuk ke status Counting.", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal memulai opname", Severity.Error);
+    }
+
+    private async Task OpenCountDialog(Guid id)
+    {
+        var res = await OpnameService.GetSessionByIdAsync(id);
+        if (res.Succeeded && res.Data != null)
+        {
+            _activeSession = res.Data;
+            _countModel = new RecordOpnameCountCommand
+            {
+                Lines = _activeSession.Lines.Select(l => new RecordOpnameLineCountDto
+                {
+                    LineId = l.Id,
+                    CountedQuantity = l.CountedQuantity ?? l.SystemSnapshotQuantity,
+                    RecountQuantity = l.RecountQuantity,
+                    Notes = l.Notes
+                }).ToList()
+            };
+            _isCountOpen = true;
+        }
+    }
+
+    private async Task SaveCounts()
+    {
+        if (_activeSession == null) return;
+        _isSaving = true;
+        try
+        {
+            var res = await OpnameService.RecordCountsAsync(_activeSession.Id, _countModel, UserContext.UserId ?? Guid.Empty);
+            if (res.Succeeded)
+            {
+                Snackbar.Add("Hasil hitung berhasil disimpan dan selisih dievaluasi.", Severity.Success);
+                _isCountOpen = false;
+                await _table!.ReloadServerData();
+            }
+            else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal menyimpan hasil hitung", Severity.Error);
+        }
+        finally { _isSaving = false; }
+    }
+
+    private async Task SubmitApproval(StockOpnameSessionDto s)
+    {
+        var res = await OpnameService.SubmitForApprovalAsync(s.Id, UserContext.UserId ?? Guid.Empty);
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Sesi {s.SessionNumber} diajukan untuk approval supervisor.", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal mengajukan approval", Severity.Error);
+    }
+
+    private async Task ApproveSession(StockOpnameSessionDto s)
+    {
+        var res = await OpnameService.ApproveAsync(s.Id, UserContext.UserId ?? Guid.Empty);
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Sesi {s.SessionNumber} berhasil disetujui (Approved).", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal menyetujui opname", Severity.Error);
+    }
+
+    private async Task RejectSession(StockOpnameSessionDto s)
+    {
+        var res = await OpnameService.RejectAsync(s.Id, UserContext.UserId ?? Guid.Empty, "Ditolak via web");
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Sesi {s.SessionNumber} ditolak.", Severity.Info);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal menolak sesi", Severity.Error);
+    }
+
+    private async Task PostAdjustment(StockOpnameSessionDto s)
+    {
+        var res = await OpnameService.PostAdjustmentAsync(s.Id, UserContext.UserId ?? Guid.Empty, Guid.NewGuid().ToString());
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Penyesuaian stok sesi {s.SessionNumber} berhasil diposting ke ledger persediaan.", Severity.Success);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal memposting penyesuaian", Severity.Error);
+    }
+
+    private async Task CancelSession(StockOpnameSessionDto s)
+    {
+        var res = await OpnameService.CancelAsync(s.Id, UserContext.UserId ?? Guid.Empty, "Dibatalkan oleh pengguna");
+        if (res.Succeeded)
+        {
+            Snackbar.Add($"Sesi {s.SessionNumber} dibatalkan.", Severity.Info);
+            await _table!.ReloadServerData();
+        }
+        else Snackbar.Add(res.Errors.FirstOrDefault() ?? "Gagal membatalkan sesi", Severity.Error);
+    }
+
+    private RenderFragment GetStatusChip(StockOpnameStatus status) => builder =>
+    {
+        var (color, label) = status switch
+        {
+            StockOpnameStatus.Draft => (Color.Default, "Draft"),
+            StockOpnameStatus.Counting => (Color.Warning, "Sedang Dihitung"),
+            StockOpnameStatus.Review => (Color.Info, "Review Selisih"),
+            StockOpnameStatus.PendingApproval => (Color.Tertiary, "Menunggu Approval"),
+            StockOpnameStatus.Approved => (Color.Primary, "Approved"),
+            StockOpnameStatus.Posted => (Color.Success, "Posted (Selesai)"),
+            StockOpnameStatus.Cancelled => (Color.Dark, "Dibatalkan"),
+            StockOpnameStatus.Rejected => (Color.Error, "Ditolak"),
+            _ => (Color.Default, status.ToString())
+        };
+
+        builder.OpenComponent<MudChip<string>>(0);
+        builder.AddAttribute(1, "Color", color);
+        builder.AddAttribute(2, "Size", Size.Small);
+        builder.AddAttribute(3, "Variant", Variant.Filled);
+        builder.AddAttribute(4, "ChildContent", (RenderFragment)(b => b.AddContent(5, label)));
+        builder.CloseComponent();
+    };
+}
