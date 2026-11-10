@@ -1,0 +1,21 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Build outputs
+[Bb]in/
+[Oo]bj/
+
+# IDE files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Test results
+[Tt]est[Rr]esults/
+*.coverage
+

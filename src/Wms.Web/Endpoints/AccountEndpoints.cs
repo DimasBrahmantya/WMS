@@ -41,7 +41,7 @@ public static class AccountEndpoints
             }
 
             return Results.LocalRedirect(string.IsNullOrWhiteSpace(returnUrl) ? "/" : returnUrl);
-        }).DisableAntiforgery(); // Handled or add token validation
+        }).RequireRateLimiting("login-limiter");
 
         group.MapPost("/logout", async (
             SignInManager<ApplicationUser> signInManager) =>

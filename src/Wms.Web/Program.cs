@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using MudBlazor.Services;
 using Serilog;
 using Wms.Application;
@@ -47,8 +48,21 @@ try
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
     });
 
-    // Policy-based Authorization
+    // Policy-based Authorization with Dynamic Permission Provider
+    builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
     builder.Services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
+
+    // Rate Limiting (Tahap 1: Proteksi Brute Force Login)
+    builder.Services.AddRateLimiter(options =>
+    {
+        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+        options.AddFixedWindowLimiter("login-limiter", opt =>
+        {
+            opt.PermitLimit = 10;
+            opt.Window = TimeSpan.FromMinutes(1);
+            opt.QueueLimit = 0;
+        });
+    });
 
     // Health Checks
     builder.Services.AddHealthChecks()
@@ -97,6 +111,8 @@ try
 
     app.UseHttpsRedirection();
     app.UseStaticFiles();
+    app.UseRouting();
+    app.UseRateLimiter();
     app.UseAntiforgery();
 
     app.UseAuthentication();

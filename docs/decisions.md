@@ -19,7 +19,7 @@ Dokumen ini mencatat keputusan arsitektur, teknis, dan verifikasi fondasi yang d
 
 ## Keputusan 2: Strategi Koneksi PostgreSQL (Supabase) & Npgsql
 
-- **Status**: Diputuskan (Tahap 0)
+- **Status**: Terverifikasi & Aktif (Tahap 0)
 - **Konteks**:
   - Supabase menyediakan 3 metode koneksi: Direct Connection (5432), Session Pooler (5432), dan Transaction Pooler (6543 via PgBouncer/Supavisor).
   - Npgsql secara default memanfaatkan *prepared statements*, advisory locks, dan fitur koneksi PostgreSQL standar.
@@ -28,6 +28,8 @@ Dokumen ini mencatat keputusan arsitektur, teknis, dan verifikasi fondasi yang d
   1. **Aplikasi Server (Runtime ASP.NET Core)**: Menggunakan **Direct Connection** atau **Session Pooler** (Port 5432).
   2. **EF Core Migrations**: **Wajib** dijalankan melalui koneksi langsung / Session Pooler (Port 5432), bukan Transaction Pooler (Port 6543).
   3. Konfigurasi connection string dan secret disimpan via `appsettings.Development.json` (lokal/user-secrets) dan environment variable (production). Disediakan template `appsettings.Example.json` dan `.env.example`.
+- **Hasil Verifikasi Lapangan (Live Test)**:
+  - Koneksi Npgsql langsung ke `db.nurxlhkrixnqvnocqbop.supabase.co:5432` dengan database `postgres` dan SSL mode `Require` berhasil diverifikasi aktif (`SELECT current_database(), version();`). Database merespon PostgreSQL Supabase dengan latency normal.
 - **Konsekuensi**: Mencegah kegagalan migrasi dan prepared statement caching error pada Npgsql.
 
 ---
