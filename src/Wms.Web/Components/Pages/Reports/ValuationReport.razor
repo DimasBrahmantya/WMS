@@ -1,0 +1,297 @@
+@page "/reports/valuation"
+@attribute [Authorize(Roles = "SuperAdmin,AdminGudang,Supervisor,Auditor")]
+@inject IReportService ReportService
+@inject IWarehouseService WarehouseService
+@inject ICategoryService CategoryService
+@inject ISnackbar Snackbar
+@inject IClock Clock
+
+<PageTitle>Laporan Nilai Persediaan - Warehouse Management System</PageTitle>
+
+<div class="mb-4 d-flex flex-wrap justify-space-between align-center gap-4">
+    <div>
+        <div class="d-flex align-center gap-2">
+            <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Primary">Laporan Nilai Persediaan</MudText>
+            <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled">
+                METODE RATA-RATA BERGERAK (MOVING AVERAGE)
+            </MudChip>
+        </div>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Valuasi persediaan per barang per gudang sesuai bagian 9.3 spesifikasi WMS.
+        </MudText>
+    </div>
+
+    <div class="d-flex align-center gap-2">
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="LoadDataAsync" Disabled="_loading">
+            Refresh
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Assessment"
+                   Href="/reports/stock">
+            Lihat Stok Fisik
+        </MudButton>
+    </div>
+</div>
+
+<!-- Header Info Resmi Spesifikasi 9.3 & 23 -->
+<MudAlert Severity="Severity.Normal" Dense="false" Class="mb-4" Elevation="1" Style="background: #f0fdf4; border: 1px solid #bbf7d0;">
+    <div class="d-flex flex-wrap justify-space-between align-center">
+        <div>
+            <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Success">
+                Metode Valuasi Resmi: Rata-Rata Bergerak (Moving Average)
+            </MudText>
+            <MudText Typo="Typo.body2">
+                @(_summary?.Description ?? "Valuasi persediaan dihitung per barang per gudang.")
+            </MudText>
+        </div>
+        <div class="text-right">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                <strong>Tanggal Perhitungan:</strong> @JakartaTime.Format(_summary?.CalculationDateUtc ?? Clock.UtcNow, "dd MMMM yyyy HH:mm")
+            </MudText>
+            <br />
+            <MudChip T="string" Size="Size.Small" Color="@(_query.Mode == ValuationReportMode.Current ? Color.Success : Color.Info)" Variant="Variant.Filled">
+                @(_query.Mode == ValuationReportMode.Current ? "Mode: Saldo Saat Ini (Real-Time)" : $"Mode: Saldo Historis per {JakartaTime.FormatDate(_historicalCutOffDate ?? JakartaTime.Today)}")
+            </MudChip>
+        </div>
+    </div>
+</MudAlert>
+
+<!-- Kartu Ringkasan Valuasi -->
+@if (_summary != null)
+{
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="2" Class="pa-4 d-flex align-center" Style="border-left: 5px solid var(--mud-palette-success);">
+                <MudAvatar Color="Color.Success" Size="Size.Large" Class="mr-4">
+                    <MudIcon Icon="@Icons.Material.Filled.AccountBalance" />
+                </MudAvatar>
+                <div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Total Nilai Persediaan Keseluruhan</MudText>
+                    <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Success">
+                        Rp @_summary.TotalValuationValue.ToString("N0")
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@_summary.TotalValuedItems SKU bernilai aktif</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="8">
+            <MudPaper Elevation="2" Class="pa-3">
+                <MudText Typo="Typo.caption" Class="font-weight-bold mb-2 d-block">Subtotal Valuasi per Gudang:</MudText>
+                <div class="d-flex flex-wrap gap-2">
+                    @foreach (var wh in _summary.WarehouseBreakdown)
+                    {
+                        <MudChip T="string" Size="Size.Medium" Variant="Variant.Outlined" Color="Color.Success">
+                            <strong>@wh.WarehouseName:</strong>&nbsp;Rp @wh.TotalValue.ToString("N0") (@wh.TotalQuantity.ToString("N0") unit)
+                        </MudChip>
+                    }
+                </div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+<!-- Filter Bar & Mode Toggle -->
+<MudPaper Elevation="2" Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudSelect T="ValuationReportMode" Label="Mode Valuasi (Saldo)" Value="@_query.Mode" ValueChanged="OnModeChanged"
+                       Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+                <MudSelectItem Value="@ValuationReportMode.Current">Saldo Saat Ini (Real-Time)</MudSelectItem>
+                <MudSelectItem Value="@ValuationReportMode.Historical">Saldo Historis (Per Tanggal)</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+
+        @if (_query.Mode == ValuationReportMode.Historical)
+        {
+            <MudItem xs="12" sm="6" md="2">
+                <MudDatePicker Label="Per Tanggal Cut-Off (WIB)" @bind-Date="_historicalCutOffDate"
+                               Margin="Margin.Dense" Variant="Variant.Outlined" />
+            </MudItem>
+        }
+
+        <MudItem xs="12" sm="6" md="@(_query.Mode == ValuationReportMode.Historical ? 2 : 3)">
+            <MudSelect T="Guid?" Label="Gudang" Value="@_query.WarehouseId" ValueChanged="OnWarehouseChanged"
+                       Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+                <MudSelectItem T="Guid?" Value="@((Guid?)null)">Semua Gudang</MudSelectItem>
+                @foreach (var wh in _availableWarehouses)
+                {
+                    <MudSelectItem T="Guid?" Value="@((Guid?)wh.Id)">@wh.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="@(_query.Mode == ValuationReportMode.Historical ? 2 : 3)">
+            <MudSelect T="Guid?" Label="Kategori" Value="@_query.CategoryId" ValueChanged="OnCategoryChanged"
+                       Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+                <MudSelectItem T="Guid?" Value="@((Guid?)null)">Semua Kategori</MudSelectItem>
+                @foreach (var cat in _availableCategories)
+                {
+                    <MudSelectItem T="Guid?" Value="@((Guid?)cat.Id)">@cat.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="@(_query.Mode == ValuationReportMode.Historical ? 3 : 3)">
+            <MudTextField @bind-Value="_query.Search" Placeholder="Cari SKU, Nama Barang..."
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Class="mt-0" Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="LoadDataAsync" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<!-- Tabel Laporan Valuasi -->
+<MudTable T="ValuationReportItemDto" ServerData="ServerReload" @ref="_table" Dense="true" Hover="true" Striped="true" Elevation="2">
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortLabel="sku" T="ValuationReportItemDto">SKU / Barcode</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="productname" T="ValuationReportItemDto">Nama Barang</MudTableSortLabel></MudTh>
+        <MudTh>Kategori</MudTh>
+        <MudTh>Gudang</MudTh>
+        <MudTh Style="text-align: right;"><MudTableSortLabel SortLabel="onhandqty" T="ValuationReportItemDto">Kuantitas On-Hand</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align: right;"><MudTableSortLabel SortLabel="avgcost" T="ValuationReportItemDto">Biaya Rata-Rata Satuan</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align: right;"><MudTableSortLabel SortLabel="onhandvalue" T="ValuationReportItemDto">Total Nilai Persediaan</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align: right;">Biaya Terakhir</MudTh>
+        <MudTh Style="text-align: center;">Aksi</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="SKU">
+            <strong>@context.Sku</strong>
+            @if (!string.IsNullOrEmpty(context.Barcode))
+            {
+                <br /><small class="text-muted">@context.Barcode</small>
+            }
+        </MudTd>
+        <MudTd DataLabel="Nama">@context.ProductName</MudTd>
+        <MudTd DataLabel="Kategori">@context.CategoryName</MudTd>
+        <MudTd DataLabel="Gudang"><strong>@context.WarehouseName</strong></MudTd>
+        <MudTd DataLabel="Kuantitas" Style="text-align: right; font-weight: bold;">
+            @context.OnHandQty.ToString("N2") @context.UnitName
+        </MudTd>
+        <MudTd DataLabel="Biaya Satuan" Style="text-align: right; color: var(--mud-palette-primary); font-weight: bold;">
+            Rp @context.AvgCost.ToString("N2")
+        </MudTd>
+        <MudTd DataLabel="Total Nilai" Style="text-align: right; font-weight: bold; color: var(--mud-palette-success);">
+            Rp @context.OnHandValue.ToString("N0")
+        </MudTd>
+        <MudTd DataLabel="Biaya Terakhir" Style="text-align: right; color: var(--mud-palette-secondary);">
+            Rp @context.LastCost.ToString("N2")
+        </MudTd>
+        <MudTd Style="text-align: center;">
+            <MudTooltip Text="Lihat Kartu Stok Lengkap">
+                <MudIconButton Icon="@Icons.Material.Filled.ReceiptLong" Color="Color.Primary" Size="Size.Small"
+                               Href="@($"/reports/stock-card?productId={context.ProductId}&warehouseId={context.WarehouseId}")" />
+            </MudTooltip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudAlert Severity="Severity.Info" Class="my-4">Tidak ada data valuasi persediaan yang sesuai dengan filter.</MudAlert>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+    </LoadingContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private MudTable<ValuationReportItemDto>? _table;
+    private readonly ValuationReportQuery _query = new() { PageSize = 25 };
+    private ValuationReportSummaryDto? _summary;
+    private DateTime? _historicalCutOffDate;
+    private List<WarehouseDto> _availableWarehouses = new();
+    private List<CategoryDto> _availableCategories = new();
+    private bool _loading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _historicalCutOffDate = JakartaTime.Today;
+        await LoadFilterMastersAsync();
+        await LoadSummaryAsync();
+    }
+
+    private async Task LoadFilterMastersAsync()
+    {
+        try
+        {
+            var warehouses = await WarehouseService.GetActiveWarehousesAsync();
+            _availableWarehouses = warehouses.ToList();
+
+            var categories = await CategoryService.GetActiveCategoriesAsync();
+            _availableCategories = categories.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal memuat referensi filter: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task<TableData<ValuationReportItemDto>> ServerReload(TableState state, CancellationToken token)
+    {
+        _loading = true;
+        _query.Page = state.Page + 1;
+        _query.PageSize = state.PageSize;
+        _query.SortBy = state.SortLabel;
+        _query.SortDescending = state.SortDirection == SortDirection.Descending;
+        _query.AsOfDate = _historicalCutOffDate;
+
+        try
+        {
+            var paged = await ReportService.GetValuationReportAsync(_query, token);
+            return new TableData<ValuationReportItemDto>
+            {
+                TotalItems = paged.TotalCount,
+                Items = paged.Items
+            };
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal memuat laporan valuasi: {ex.Message}", Severity.Error);
+            return new TableData<ValuationReportItemDto> { TotalItems = 0, Items = Array.Empty<ValuationReportItemDto>() };
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        try
+        {
+            _query.AsOfDate = _historicalCutOffDate;
+            _summary = await ReportService.GetValuationReportSummaryAsync(_query);
+        }
+        catch
+        {
+            // Silently handle summary error
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        await LoadSummaryAsync();
+        if (_table != null)
+        {
+            await _table.ReloadServerData();
+        }
+    }
+
+    private async Task OnModeChanged(ValuationReportMode mode)
+    {
+        _query.Mode = mode;
+        await LoadDataAsync();
+    }
+
+    private async Task OnWarehouseChanged(Guid? warehouseId)
+    {
+        _query.WarehouseId = warehouseId;
+        await LoadDataAsync();
+    }
+
+    private async Task OnCategoryChanged(Guid? categoryId)
+    {
+        _query.CategoryId = categoryId;
+        await LoadDataAsync();
+    }
+}

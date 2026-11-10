@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Wms.Domain")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+06f410aed7b92b42baab7e93a5af2868812222fe")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e7125e03fd3c48db498e4215aa73382d15c600fa")]
 [assembly: System.Reflection.AssemblyProductAttribute("Wms.Domain")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Wms.Domain")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

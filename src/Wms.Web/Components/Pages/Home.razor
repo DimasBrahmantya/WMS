@@ -1,157 +1,541 @@
 @page "/"
 @attribute [Authorize]
-@inject IWmsDbContext DbContext
+@inject IDashboardService DashboardService
+@inject IWarehouseService WarehouseService
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
 @inject IClock Clock
-@using Microsoft.EntityFrameworkCore
 
-<PageTitle>Dashboard - Warehouse Management System</PageTitle>
+<PageTitle>Dashboard Operasional - Warehouse Management System</PageTitle>
 
-<div class="mb-4 d-flex justify-space-between align-center">
+<div class="mb-4 d-flex flex-wrap justify-space-between align-center gap-4">
     <div>
-        <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Primary">Dashboard Operasional</MudText>
+        <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Primary">Dashboard Operasional Persediaan</MudText>
         <MudText Typo="Typo.body2" Color="Color.Secondary">
-            Waktu Server (Jakarta): @Clock.TodayJakarta.ToString("dddd, dd MMMM yyyy")
+            Waktu Server (WIB): @JakartaTime.Format(Clock.UtcNow, "dddd, dd MMMM yyyy HH:mm")
         </MudText>
+    </div>
+
+    <div class="d-flex flex-wrap align-center gap-3">
+        <MudSelect T="Guid?" Label="Filter Gudang" Value="@_filter.WarehouseId" ValueChanged="OnWarehouseChanged"
+                   Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width: 200px;">
+            <MudSelectItem T="Guid?" Value="@((Guid?)null)">Semua Gudang</MudSelectItem>
+            @foreach (var wh in _availableWarehouses)
+            {
+                <MudSelectItem T="Guid?" Value="@((Guid?)wh.Id)">@wh.Name (@wh.Code)</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudSelect T="string" Label="Rentang Waktu" Value="@_selectedPeriod" ValueChanged="OnPeriodChanged"
+                   Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width: 170px;">
+            <MudSelectItem Value="@("today")">Hari Ini</MudSelectItem>
+            <MudSelectItem Value="@("7days")">7 Hari Terakhir</MudSelectItem>
+            <MudSelectItem Value="@("30days")">30 Hari Terakhir</MudSelectItem>
+            <MudSelectItem Value="@("month")">Bulan Ini</MudSelectItem>
+        </MudSelect>
+
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="LoadDashboardAsync" Disabled="_loading">
+            Refresh
+        </MudButton>
     </div>
 </div>
 
-<MudGrid Class="mb-6">
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Elevation="2" Class="pa-4 d-flex align-center">
-            <MudIcon Icon="@Icons.Material.Filled.Inventory2" Color="Color.Primary" Size="Size.Large" Class="mr-4" />
-            <div>
-                <MudText Typo="Typo.caption" Color="Color.Secondary">Total SKU Terdaftar</MudText>
-                <MudText Typo="Typo.h5" Class="font-weight-bold">@_totalSku</MudText>
-            </div>
-        </MudPaper>
-    </MudItem>
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-6" />
+}
 
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Elevation="2" Class="pa-4 d-flex align-center">
-            <MudIcon Icon="@Icons.Material.Filled.Warehouse" Color="Color.Info" Size="Size.Large" Class="mr-4" />
-            <div>
-                <MudText Typo="Typo.caption" Color="Color.Secondary">Gudang Aktif</MudText>
-                <MudText Typo="Typo.h5" Class="font-weight-bold">@_activeWarehouses</MudText>
-            </div>
-        </MudPaper>
-    </MudItem>
+@if (_summary != null)
+{
+    <!-- KPI Utama -->
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2" Class="pa-2 cursor-pointer hover-card" @onclick="@(() => Navigation.NavigateTo("/master/products"))">
+                <MudCardContent Class="d-flex align-center">
+                    <MudAvatar Color="Color.Primary" Size="Size.Large" Class="mr-4">
+                        <MudIcon Icon="@Icons.Material.Filled.Inventory2" Size="Size.Medium" />
+                    </MudAvatar>
+                    <div>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Total SKU Aktif</MudText>
+                        <MudText Typo="Typo.h5" Class="font-weight-bold">@_summary.TotalActiveSku</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Primary">Lihat Master Barang &rarr;</MudText>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
 
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Elevation="2" Class="pa-4 d-flex align-center">
-            <MudIcon Icon="@Icons.Material.Filled.SwapVert" Color="Color.Success" Size="Size.Large" Class="mr-4" />
-            <div>
-                <MudText Typo="Typo.caption" Color="Color.Secondary">Mutasi Hari Ini</MudText>
-                <MudText Typo="Typo.h5" Class="font-weight-bold">@_todayMovements</MudText>
-            </div>
-        </MudPaper>
-    </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2" Class="pa-2 cursor-pointer hover-card" @onclick="@(() => Navigation.NavigateTo("/reports/valuation"))">
+                <MudCardContent Class="d-flex align-center">
+                    <MudAvatar Color="Color.Success" Size="Size.Large" Class="mr-4">
+                        <MudIcon Icon="@Icons.Material.Filled.MonetizationOn" Size="Size.Medium" />
+                    </MudAvatar>
+                    <div>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Nilai Persediaan (Moving Avg)</MudText>
+                        <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Success">
+                            Rp @_summary.TotalValuation.ToString("N0")
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Success">Laporan Valuasi &rarr;</MudText>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
 
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Elevation="2" Class="pa-4 d-flex align-center">
-            <MudIcon Icon="@Icons.Material.Filled.History" Color="Color.Warning" Size="Size.Large" Class="mr-4" />
-            <div>
-                <MudText Typo="Typo.caption" Color="Color.Secondary">Total Aktivitas Audit</MudText>
-                <MudText Typo="Typo.h5" Class="font-weight-bold">@_totalAuditLogs</MudText>
-            </div>
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2" Class="pa-2 cursor-pointer hover-card" @onclick="@(() => Navigation.NavigateTo("/reports/stock?status=low"))">
+                <MudCardContent Class="d-flex align-center">
+                    <MudAvatar Color="Color.Warning" Size="Size.Large" Class="mr-4">
+                        <MudIcon Icon="@Icons.Material.Filled.WarningAmber" Size="Size.Medium" />
+                    </MudAvatar>
+                    <div>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Barang Stok Rendah (&le; Min)</MudText>
+                        <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Warning">@_summary.LowStockCount</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Warning">Periksa Stok &rarr;</MudText>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
 
-<MudGrid>
-    <MudItem xs="12" md="8">
-        <MudPaper Elevation="2" Class="pa-4">
-            <div class="d-flex justify-space-between align-center mb-4">
-                <MudText Typo="Typo.h6" Class="font-weight-bold">Log Aktivitas Sistem Terbaru</MudText>
-                <MudButton Href="/admin/audit-logs" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">
-                    Lihat Semua
-                </MudButton>
-            </div>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2" Class="pa-2 cursor-pointer hover-card" @onclick="@(() => Navigation.NavigateTo("/reports/stock?status=out"))">
+                <MudCardContent Class="d-flex align-center">
+                    <MudAvatar Color="Color.Error" Size="Size.Large" Class="mr-4">
+                        <MudIcon Icon="@Icons.Material.Filled.RemoveShoppingCart" Size="Size.Medium" />
+                    </MudAvatar>
+                    <div>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Barang Stok Habis (0)</MudText>
+                        <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Error">@_summary.OutOfStockCount</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Error">Periksa Habis &rarr;</MudText>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
 
-            @if (_recentLogs == null)
-            {
-                <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="my-4" />
-            }
-            else if (_recentLogs.Count == 0)
-            {
-                <MudAlert Severity="Severity.Info" Dense="true">Belum ada catatan aktivitas di audit log.</MudAlert>
-            }
-            else
-            {
-                <MudTable Items="_recentLogs" Dense="true" Hover="true" Elevation="0">
-                    <HeaderContent>
-                        <MudTh>Waktu (UTC)</MudTh>
-                        <MudTh>Pengguna</MudTh>
-                        <MudTh>Aksi</MudTh>
-                        <MudTh>Entitas</MudTh>
-                        <MudTh>ID Entitas</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Waktu">@context.TimestampUtc.ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
-                        <MudTd DataLabel="Pengguna">@(context.UserName ?? "Sistem")</MudTd>
-                        <MudTd DataLabel="Aksi">
-                            <MudChip T="string" Size="Size.Small" Color="@GetActionColor(context.Action)">@context.Action</MudChip>
-                        </MudTd>
-                        <MudTd DataLabel="Entitas">@context.EntityType</MudTd>
-                        <MudTd DataLabel="ID">@context.EntityId</MudTd>
-                    </RowTemplate>
-                </MudTable>
-            }
-        </MudPaper>
-    </MudItem>
+    <!-- Transaksi Hari Ini -->
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="2" Class="pa-3 d-flex align-center cursor-pointer" @onclick="@(() => Navigation.NavigateTo("/stock/in"))">
+                <MudIcon Icon="@Icons.Material.Filled.MoveToInbox" Color="Color.Info" Class="mr-3" Size="Size.Large" />
+                <div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Barang Masuk Diposting Hari Ini</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">@_summary.TodayGoodsReceiptsCount Dokumen</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
 
-    <MudItem xs="12" md="4">
-        <MudPaper Elevation="2" Class="pa-4">
-            <MudText Typo="Typo.h6" Class="font-weight-bold mb-4">Informasi Rilis & Status</MudText>
-            <MudList T="string" Dense="true">
-                <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
-                    <MudText Typo="Typo.body2"><strong>Fase 1: Tahap Fondasi Aktif</strong></MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">ASP.NET Core 8 LTS + MudBlazor</MudText>
-                </MudListItem>
-                <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
-                    <MudText Typo="Typo.body2"><strong>Database PostgreSQL</strong></MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">EF Core Migrations & Npgsql</MudText>
-                </MudListItem>
-                <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
-                    <MudText Typo="Typo.body2"><strong>Keamanan & RBAC</strong></MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">Identity, Secure Cookie, Lockout</MudText>
-                </MudListItem>
-                <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
-                    <MudText Typo="Typo.body2"><strong>Audit Trail Terpusat</strong></MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">Append-only Audit Interceptor</MudText>
-                </MudListItem>
-            </MudList>
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="2" Class="pa-3 d-flex align-center cursor-pointer" @onclick="@(() => Navigation.NavigateTo("/stock/out"))">
+                <MudIcon Icon="@Icons.Material.Filled.Outbox" Color="Color.Secondary" Class="mr-3" Size="Size.Large" />
+                <div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Barang Keluar Diposting Hari Ini</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">@_summary.TodayStockOutsCount Dokumen</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="2" Class="pa-3 d-flex align-center cursor-pointer" @onclick="@(() => Navigation.NavigateTo("/reports/stock"))">
+                <MudIcon Icon="@Icons.Material.Filled.SwapVert" Color="Color.Success" Class="mr-3" Size="Size.Large" />
+                <div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Total Mutasi Ledger Hari Ini</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">@_summary.TodayMovementCount Pergerakan</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <!-- Kuantitas per Satuan & Valuasi per Gudang -->
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="2" Class="pa-4 h-100">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Total Kuantitas per Satuan Fisik</MudText>
+                    <MudTooltip Text="Kuantitas stok per satuan disajikan terpisah agar tidak menjumlahkan satuan yang berbeda tanpa konteks (Pcs, Box, Kg, dll.) sesuai Bagian 6 spesifikasi.">
+                        <MudIcon Icon="@Icons.Material.Filled.HelpOutline" Size="Size.Small" Color="Color.Default" />
+                    </MudTooltip>
+                </div>
+
+                @if (_summary.QuantitiesByUnit.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Normal" Dense="true">Belum ada saldo persediaan tersimpan.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="_summary.QuantitiesByUnit" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Satuan Barang</MudTh>
+                            <MudTh Style="text-align: right;">Total Kuantitas Fisik (On Hand)</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd><strong>@context.UnitName</strong></MudTd>
+                            <MudTd Style="text-align: right;">@context.TotalQuantity.ToString("N2") @context.UnitName</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="2" Class="pa-4 h-100">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Rincian Valuasi per Gudang (Moving Avg)</MudText>
+                    <MudButton Href="/reports/valuation" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">
+                        Lihat Laporan Lengkap
+                    </MudButton>
+                </div>
+
+                @if (_summary.ValuationByWarehouse.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Normal" Dense="true">Belum ada nilai persediaan tercatat di gudang.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="_summary.ValuationByWarehouse" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Gudang</MudTh>
+                            <MudTh Style="text-align: right;">Total Item</MudTh>
+                            <MudTh Style="text-align: right;">Total Nilai Persediaan (IDR)</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd><strong>@context.WarehouseName</strong> (@context.WarehouseCode)</MudTd>
+                            <MudTd Style="text-align: right;">@context.TotalQuantity.ToString("N0") unit</MudTd>
+                            <MudTd Style="text-align: right; font-weight: bold; color: var(--mud-palette-success);">
+                                Rp @context.TotalValue.ToString("N0")
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <!-- Grafik Tren & Distribusi Kategori -->
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" md="8">
+            <MudPaper Elevation="2" Class="pa-4">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Tren Mutasi Barang Masuk & Keluar</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Periode: @_summary.StartDateUtc.ToString("dd/MM/yyyy") - @_summary.EndDateUtc.ToString("dd/MM/yyyy")</MudText>
+                </div>
+
+                @if (_summary.MovementTrends.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Normal" Dense="true">Belum ada pergerakan stok pada rentang tanggal yang dipilih.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="_summary.MovementTrends" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Tanggal (WIB)</MudTh>
+                            <MudTh Style="text-align: right;">Barang Masuk (IN)</MudTh>
+                            <MudTh Style="text-align: right;">Barang Keluar (OUT)</MudTh>
+                            <MudTh Style="text-align: right;">Jumlah Mutasi</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.Date.ToString("dd MMMM yyyy")</MudTd>
+                            <MudTd Style="text-align: right; color: var(--mud-palette-info); font-weight: bold;">
+                                +@context.InQty.ToString("N2")
+                            </MudTd>
+                            <MudTd Style="text-align: right; color: var(--mud-palette-secondary); font-weight: bold;">
+                                -@context.OutQty.ToString("N2")
+                            </MudTd>
+                            <MudTd Style="text-align: right;">@context.TransactionCount transaksi</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="2" Class="pa-4 h-100">
+                <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-3">Stok Berdasarkan Kategori</MudText>
+                @if (_summary.CategoryDistribution.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Normal" Dense="true">Belum ada kategori dengan stok.</MudAlert>
+                }
+                else
+                {
+                    <MudList T="string" Dense="true">
+                        @foreach (var cat in _summary.CategoryDistribution)
+                        {
+                            <MudListItem Icon="@Icons.Material.Filled.Category" IconColor="Color.Primary">
+                                <div class="d-flex justify-space-between align-center">
+                                    <div>
+                                        <MudText Typo="Typo.body2"><strong>@cat.CategoryName</strong></MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@cat.ProductCount SKU terdaftar</MudText>
+                                    </div>
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                                        @cat.TotalQuantity.ToString("N0") item
+                                    </MudChip>
+                                </div>
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <!-- Fast-Moving vs Dead Stock -->
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="2" Class="pa-4 h-100">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Barang Paling Sering Keluar (Fast-Moving)</MudText>
+                    <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Color="Color.Success" />
+                </div>
+
+                @if (_summary.TopMovingProducts.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Normal" Dense="true">Belum ada transaksi pengeluaran barang pada periode terpilih.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="_summary.TopMovingProducts" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>SKU & Nama</MudTh>
+                            <MudTh>Kategori</MudTh>
+                            <MudTh Style="text-align: right;">Total Keluar</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>
+                                <strong>@context.Sku</strong><br />
+                                <small>@context.ProductName</small>
+                            </MudTd>
+                            <MudTd>@context.CategoryName</MudTd>
+                            <MudTd Style="text-align: right; font-weight: bold; color: var(--mud-palette-error);">
+                                @context.TotalOutQty.ToString("N2") @context.UnitName
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="2" Class="pa-4 h-100">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <div>
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Barang Tidak Bergerak (Dead Stock)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Tidak ada pergerakan keluar &ge; 30 hari</MudText>
+                    </div>
+                    <MudIcon Icon="@Icons.Material.Filled.HourglassBottom" Color="Color.Warning" />
+                </div>
+
+                @if (_summary.DeadStockProducts.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Success" Dense="true">Semua barang dengan stok berjalan aktif dan sehat.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="_summary.DeadStockProducts" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>SKU & Nama</MudTh>
+                            <MudTh>Gudang</MudTh>
+                            <MudTh Style="text-align: right;">Saldo Fisik</MudTh>
+                            <MudTh Style="text-align: right;">Tidak Bergerak</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>
+                                <strong>@context.Sku</strong><br />
+                                <small>@context.ProductName</small>
+                            </MudTd>
+                            <MudTd>@context.WarehouseName</MudTd>
+                            <MudTd Style="text-align: right; font-weight: bold;">
+                                @context.CurrentOnHand.ToString("N2") @context.UnitName
+                            </MudTd>
+                            <MudTd Style="text-align: right;">
+                                <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Outlined">
+                                    @context.DaysInactive hari
+                                </MudChip>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <!-- Riwayat Aktivitas Pergerakan Terbaru -->
+    <MudGrid Class="mb-4">
+        <MudItem xs="12">
+            <MudPaper Elevation="2" Class="pa-4">
+                <div class="d-flex justify-space-between align-center mb-3">
+                    <div>
+                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Aktivitas Pergerakan Stok Terbaru (Stock Ledger)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">7 pencatatan ledger kronologis terbaru di seluruh gudang</MudText>
+                    </div>
+                    <MudButton Href="/reports/stock-card" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">
+                        Lihat Kartu Stok &rarr;
+                    </MudButton>
+                </div>
+
+                @if (_summary.RecentMovements.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Normal" Dense="true">Belum ada mutasi stok yang tercatat pada sistem.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="_summary.RecentMovements" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Waktu (WIB)</MudTh>
+                            <MudTh>No. Dokumen / Mutasi</MudTh>
+                            <MudTh>Barang</MudTh>
+                            <MudTh>Gudang & Rak</MudTh>
+                            <MudTh>Arah</MudTh>
+                            <MudTh Style="text-align: right;">Kuantitas</MudTh>
+                            <MudTh Style="text-align: right;">Total Nilai</MudTh>
+                            <MudTh>Operator</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@JakartaTime.Format(context.TimestampUtc, "dd/MM/yyyy HH:mm")</MudTd>
+                            <MudTd>
+                                <strong>@context.SourceDocumentNumber</strong><br />
+                                <small class="text-muted">@context.MovementNumber</small>
+                            </MudTd>
+                            <MudTd>
+                                <strong>@context.Sku</strong><br />
+                                <small>@context.ProductName</small>
+                            </MudTd>
+                            <MudTd>@context.WarehouseName (@context.LocationCode)</MudTd>
+                            <MudTd>
+                                <MudChip T="string" Size="Size.Small" Color="@(context.Direction == MovementDirection.In ? Color.Success : Color.Error)">
+                                    @(context.Direction == MovementDirection.In ? "MASUK" : "KELUAR")
+                                </MudChip>
+                            </MudTd>
+                            <MudTd Style="text-align: right; font-weight: bold;">
+                                @(context.Direction == MovementDirection.In ? "+" : "-")@context.Quantity.ToString("N2") @context.UnitName
+                            </MudTd>
+                            <MudTd Style="text-align: right;">
+                                Rp @context.TotalValue.ToString("N0")
+                            </MudTd>
+                            <MudTd>@context.OperatorName</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <!-- Indikator Fase 2 (Belum Tersedia) -->
+    <MudPaper Elevation="1" Class="pa-4 mb-4" Style="background: #f8fafc; border: 1px dashed #cbd5e1;">
+        <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2" Color="Color.Secondary">
+            <MudIcon Icon="@Icons.Material.Filled.HourglassEmpty" Size="Size.Small" Class="mr-1" />
+            Modul Workflow Operasional (Fase 2 — Belum Tersedia)
+        </MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="4">
+                <div class="d-flex align-center">
+                    <MudIcon Icon="@Icons.Material.Filled.Assignment" Color="Color.Default" Class="mr-2" />
+                    <div>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">PO Menunggu Penerimaan/Approval</MudText>
+                        <MudText Typo="Typo.body2"><strong>Fase 2 (Belum Tersedia)</strong></MudText>
+                    </div>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <div class="d-flex align-center">
+                    <MudIcon Icon="@Icons.Material.Filled.SwapHoriz" Color="Color.Default" Class="mr-2" />
+                    <div>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Transfer Menunggu Approval/Penerimaan</MudText>
+                        <MudText Typo="Typo.body2"><strong>Fase 2 (Belum Tersedia)</strong></MudText>
+                    </div>
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <div class="d-flex align-center">
+                    <MudIcon Icon="@Icons.Material.Filled.ReportProblem" Color="Color.Default" Class="mr-2" />
+                    <div>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Barang Hilang / Rusak Dilaporkan</MudText>
+                        <MudText Typo="Typo.body2"><strong>Fase 2 (Belum Tersedia)</strong></MudText>
+                    </div>
+                </div>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+}
 
 @code {
-    private int _totalSku = 0;
-    private int _activeWarehouses = 0;
-    private int _todayMovements = 0;
-    private int _totalAuditLogs = 0;
-    private List<Wms.Domain.Entities.System.AuditLog>? _recentLogs;
+    private DashboardSummaryDto? _summary;
+    private readonly DashboardFilterDto _filter = new();
+    private List<WarehouseDto> _availableWarehouses = new();
+    private string _selectedPeriod = "30days";
+    private bool _loading = true;
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadWarehousesAsync();
+        ApplyPeriodSelection("30days");
+        await LoadDashboardAsync();
+    }
+
+    private async Task LoadWarehousesAsync()
+    {
         try
         {
-            _totalAuditLogs = await DbContext.AuditLogs.CountAsync();
-            _recentLogs = await DbContext.AuditLogs
-                .OrderByDescending(a => a.TimestampUtc)
-                .Take(5)
-                .ToListAsync();
+            var warehouses = await WarehouseService.GetActiveWarehousesAsync();
+            _availableWarehouses = warehouses.ToList();
         }
-        catch
+        catch (Exception ex)
         {
-            _recentLogs = new List<Wms.Domain.Entities.System.AuditLog>();
+            Snackbar.Add($"Gagal memuat daftar gudang: {ex.Message}", Severity.Error);
         }
     }
 
-    private Color GetActionColor(string action) => action switch
+    private void ApplyPeriodSelection(string period)
     {
-        "Create" => Color.Success,
-        "Update" => Color.Info,
-        "Delete" => Color.Error,
-        _ => Color.Default
-    };
+        _selectedPeriod = period;
+        var today = JakartaTime.Today;
+
+        switch (period)
+        {
+            case "today":
+                _filter.StartDate = today;
+                _filter.EndDate = today;
+                break;
+            case "7days":
+                _filter.StartDate = today.AddDays(-6);
+                _filter.EndDate = today;
+                break;
+            case "30days":
+                _filter.StartDate = today.AddDays(-29);
+                _filter.EndDate = today;
+                break;
+            case "month":
+                _filter.StartDate = new DateTime(today.Year, today.Month, 1);
+                _filter.EndDate = today;
+                break;
+        }
+    }
+
+    private async Task OnPeriodChanged(string period)
+    {
+        ApplyPeriodSelection(period);
+        await LoadDashboardAsync();
+    }
+
+    private async Task OnWarehouseChanged(Guid? warehouseId)
+    {
+        _filter.WarehouseId = warehouseId;
+        await LoadDashboardAsync();
+    }
+
+    private async Task LoadDashboardAsync()
+    {
+        _loading = true;
+        try
+        {
+            _summary = await DashboardService.GetDashboardSummaryAsync(_filter);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal memuat ringkasan dashboard: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
 }

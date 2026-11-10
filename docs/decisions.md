@@ -143,3 +143,57 @@ Dokumen ini mencatat keputusan arsitektur, teknis, dan verifikasi fondasi yang d
 - **Keputusan**:
   - Layanan `StockReconciliationService` membandingkan `balance.OnHand` dengan `SUM(CASE WHEN In THEN Qty ELSE -Qty END)` untuk seluruh kombinasi barang, gudang, lokasi, dan status stok.
   - Menghasilkan laporan ketidakkonsistenan secara otomatis untuk kebutuhan audit dan health monitoring persediaan.
+
+---
+
+## Keputusan 11: Arsitektur Agregasi Database Dashboard & Pembedaan Satuan Fisik
+
+- **Status**: Diputuskan & Diimplementasikan (Tahap 4)
+- **Konteks**:
+  - Bagian 6 spesifikasi: Seluruh angka dashboard dihitung dari database (tanpa hardcode); total kuantitas stok dikelompokkan per satuan fisik (tidak boleh menjumlahkan satuan berbeda seperti Pcs, Box, Kg tanpa konteks); query menggunakan agregasi database.
+  - Pengguna dengan pembatasan gudang hanya boleh melihat metrik dan tren gudang yang diizinkan.
+- **Keputusan**:
+  - `DashboardService` mengeksekusi agregasi langsung di database (`CountAsync`, `SumAsync`, `GroupBy`) dengan filter hak akses `IUserContext.AllowedWarehouseIds`.
+  - Kuantitas stok dikelompokkan dan ditampilkan per satuan fisik (`QuantitiesByUnit`).
+  - Metrik utama (SKU aktif, valuasi moving average, stok rendah, stok habis) dilengkapi tautan interaktif navigasi langsung ke halaman terfilter terkait.
+  - Modul fase berikutnya (PO menunggu approval, transfer in-transit, barang hilang/rusak) disajikan dengan penanda jelas *"Fase 2 (Belum Tersedia)"*.
+
+---
+
+## Keputusan 12: Rekonstruksi Saldo Berjalan dan Pembedaan Saldo Saat Ini vs Historis
+
+- **Status**: Diputuskan & Diimplementasikan (Tahap 4)
+- **Konteks**:
+  - Bagian 23 spesifikasi: *Bedakan jelas saldo saat ini dan saldo historis; saldo historis direkonstruksi dari ledger atau snapshot sah.*
+- **Keputusan**:
+  - **Kartu Stok (`StockCardReportDto`)**:
+    - **Saldo Awal Historis (Opening Balance)** dihitung dari kumulatif pergerakan ledger (`stock_movements`) sebelum tanggal mulai filter (`TimestampUtc < StartDateUtc`).
+    - Setiap pergerakan dalam periode menampilkan kuantitas masuk/keluar, biaya satuan, total nilai transaksi, dan **Saldo Berjalan (Running Balance)**.
+    - Menampilkan perbandingan berdampingan yang transparan antara **Saldo Akhir Periode Historis** (`ClosingBalance`) dan **Saldo Fisik Saat Ini** (`CurrentRealTimeBalance`) dari `inventory_balances`.
+  - **Laporan Stok Saat Ini**:
+    - Diberi penanda visual tegas **"SALDO SAAT INI (REAL-TIME)"** yang menerangkan bahwa data bersumber langsung dari saldo fisik aktif di gudang dan lokasi rak.
+
+---
+
+## Keputusan 13: Laporan Nilai Persediaan Rata-Rata Bergerak (Mode Real-Time vs Historis)
+
+- **Status**: Diputuskan & Diimplementasikan (Tahap 4)
+- **Konteks**:
+  - Bagian 9.3 & 23 spesifikasi: *Laporan nilai persediaan menyebutkan metode (rata-rata bergerak) dan tanggal perhitungan.*
+- **Keputusan**:
+  - Header laporan mencantumkan secara eksplisit: **"Metode Valuasi: Rata-Rata Bergerak (Moving Average)"**, tanggal perhitungan aktual, dan mode saldo aktif.
+  - Menyediakan dua mode evaluasi:
+    1. **Saldo Saat Ini (Real-Time)**: bersumber langsung dari tabel `inventory_valuations` (`on_hand_qty`, `avg_cost`, `on_hand_value`, `last_cost`).
+    2. **Saldo Historis (Per Tanggal)**: merekonstruksi saldo kuantitas dan nilai kumulatif dari ledger `stock_movements` hingga timestamp batas tanggal (*as-of date*) yang dipilih pengguna.
+
+---
+
+## Keputusan 14: Viewer Audit Log Append-Only dengan Format Waktu Asia/Jakarta (WIB)
+
+- **Status**: Diputuskan & Diimplementasikan (Tahap 4)
+- **Konteks**:
+  - Bagian 24 spesifikasi: Catatan audit bersifat append-only, hak `UPDATE`/`DELETE` dicabut untuk role aplikasi, tidak menyimpan rahasia, dan menampilkan timestamp dalam zona waktu `Asia/Jakarta` (WIB) dengan locale `id-ID`.
+- **Keputusan**:
+  - Halaman `/admin/audit-logs` dibatasi untuk role `SuperAdmin`, `Supervisor`, dan `Auditor` (`audit.view`).
+  - Dilengkapi dialog detail perubahan dengan penyorotan perbandingan *Old Values* vs *New Values*, *Correlation ID*, *IP Address*, dan alasan transaksi.
+  - Seluruh timestamp UTC dikonversi ke waktu lokal Jakarta menggunakan utility `JakartaTime.cs`.

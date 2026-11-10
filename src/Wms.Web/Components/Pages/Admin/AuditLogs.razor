@@ -1,140 +1,330 @@
 @page "/admin/audit-logs"
 @attribute [Authorize(Roles = "SuperAdmin,Supervisor,Auditor")]
-@inject IWmsDbContext DbContext
+@inject IAuditLogService AuditLogService
 @inject ISnackbar Snackbar
-@using Microsoft.EntityFrameworkCore
+@inject IClock Clock
 
-<PageTitle>Audit Log - WMS Nusantara</PageTitle>
+<PageTitle>Viewer Audit Log - Warehouse Management System</PageTitle>
 
-<div class="mb-4 d-flex justify-space-between align-center">
+<div class="mb-4 d-flex flex-wrap justify-space-between align-center gap-4">
     <div>
-        <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Primary">Audit Trail & Log Aktivitas</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">Riwayat seluruh perubahan data dan mutasi sistem yang tidak dapat diubah (append-only).</MudText>
+        <div class="d-flex align-center gap-2">
+            <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Primary">Audit Trail & Log Aktivitas Sistem</MudText>
+            <MudChip T="string" Color="Color.Dark" Size="Size.Small" Variant="Variant.Filled">
+                APPEND-ONLY LEDGER
+            </MudChip>
+        </div>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Riwayat seluruh perubahan data, autentikasi, dan posting transaksi. Hak UPDATE dan DELETE dicabut untuk role aplikasi.
+        </MudText>
     </div>
-    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadLogsAsync">
+
+    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh"
+               OnClick="LoadDataAsync" Disabled="_loading">
         Refresh
     </MudButton>
 </div>
 
-<MudPaper Elevation="2" Class="pa-4">
-    <div class="d-flex flex-wrap gap-4 mb-4">
-        <MudTextField @bind-Value="_searchString" Placeholder="Cari entitas, ID, atau pengguna..." Adornment="Adornment.Start"
-                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0" Immediate="true"
-                      DebounceInterval="300" OnDebounceIntervalElapsed="LoadLogsAsync" />
-
-        <MudSelect T="string" Label="Aksi" @bind-Value="_selectedAction" SelectedValuesChanged="LoadLogsAsync" Dense="true" Class="mt-0" Style="min-width: 150px;">
-            <MudSelectItem Value="@("")">Semua Aksi</MudSelectItem>
-            <MudSelectItem Value="@("Create")">Create</MudSelectItem>
-            <MudSelectItem Value="@("Update")">Update</MudSelectItem>
-            <MudSelectItem Value="@("Delete")">Delete</MudSelectItem>
-        </MudSelect>
+<!-- Banner Keamanan Audit Sesuai Bagian 24 -->
+<MudAlert Severity="Severity.Normal" Dense="true" Class="mb-4" Elevation="1" Style="background: #f8fafc; border: 1px solid #cbd5e1;">
+    <div class="d-flex justify-space-between align-center">
+        <div>
+            <strong>Integritas Audit:</strong> Setiap log audit mengaitkan <em>User ID</em>, <em>Correlation ID</em>, <em>Timestamp UTC</em>, dan perbandingan <em>Old Values / New Values</em>. Tidak ada kata sandi, token, atau informasi rahasia yang disimpan.
+        </div>
+        <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">
+            Terlindungi Database Constraint
+        </MudChip>
     </div>
+</MudAlert>
 
-    @if (_loading)
-    {
-        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
-    }
+<!-- Ringkasan Statistik Audit -->
+@if (_summary != null)
+{
+    <MudGrid Class="mb-4">
+        <MudItem xs="6" sm="3" md="2">
+            <MudPaper Elevation="1" Class="pa-3 text-center">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Total Catatan</MudText>
+                <MudText Typo="Typo.h6" Class="font-weight-bold">@_summary.TotalLogs</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3" md="2">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="border-bottom: 3px solid var(--mud-palette-success);">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Penambahan (Create)</MudText>
+                <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Success">@_summary.TotalCreates</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3" md="2">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="border-bottom: 3px solid var(--mud-palette-info);">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Pembaruan (Update)</MudText>
+                <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Info">@_summary.TotalUpdates</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3" md="2">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="border-bottom: 3px solid var(--mud-palette-error);">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Penghapusan (Delete)</MudText>
+                <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Error">@_summary.TotalDeletes</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3" md="2">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="border-bottom: 3px solid var(--mud-palette-primary);">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Posting Stok</MudText>
+                <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Primary">@_summary.TotalPostings</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3" md="2">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="border-bottom: 3px solid var(--mud-palette-warning);">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Pembatalan (Reverse)</MudText>
+                <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Warning">@_summary.TotalReversals</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
 
-    <MudTable Items="_logs" Dense="true" Hover="true" Striped="true" Elevation="0">
-        <HeaderContent>
-            <MudTh>Waktu (UTC)</MudTh>
-            <MudTh>Pengguna</MudTh>
-            <MudTh>Aksi</MudTh>
-            <MudTh>Entitas</MudTh>
-            <MudTh>ID Entitas</MudTh>
-            <MudTh>Correlation ID</MudTh>
-            <MudTh Style="text-align: right;">Detail Perubahan</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Waktu">@context.TimestampUtc.ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
-            <MudTd DataLabel="Pengguna">@(context.UserName ?? "Sistem")</MudTd>
-            <MudTd DataLabel="Aksi">
-                <MudChip T="string" Size="Size.Small" Color="@GetActionColor(context.Action)">@context.Action</MudChip>
-            </MudTd>
-            <MudTd DataLabel="Entitas">@context.EntityType</MudTd>
-            <MudTd DataLabel="ID">@context.EntityId</MudTd>
-            <MudTd DataLabel="Correlation ID">
-                <code style="font-size: 0.75rem;">@context.CorrelationId</code>
-            </MudTd>
-            <MudTd DataLabel="Detail" Style="text-align: right;">
-                <MudIconButton Icon="@Icons.Material.Filled.Info" Size="Size.Small" Color="Color.Primary" OnClick="@(() => ShowDetail(context))" />
-            </MudTd>
-        </RowTemplate>
-        <PagerContent>
-            <MudTablePager PageSizeOptions="new int[] { 10, 25, 50 }" />
-        </PagerContent>
-    </MudTable>
+<!-- Filter Bar -->
+<MudPaper Elevation="2" Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudTextField @bind-Value="_query.Search" Placeholder="Cari pengguna, ID entitas, correlation ID..."
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Class="mt-0" Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="LoadDataAsync" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="string" Label="Aksi" Value="@_query.Action" ValueChanged="OnActionChanged"
+                       Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+                <MudSelectItem Value="@("")">Semua Aksi</MudSelectItem>
+                @foreach (var action in _availableActions)
+                {
+                    <MudSelectItem Value="@action">@action</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="string" Label="Tipe Entitas" Value="@_query.EntityType" ValueChanged="OnEntityTypeChanged"
+                       Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+                <MudSelectItem Value="@("")">Semua Entitas</MudSelectItem>
+                @foreach (var ent in _availableEntityTypes)
+                {
+                    <MudSelectItem Value="@ent">@ent</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="2">
+            <MudDatePicker Label="Dari Tanggal (WIB)" @bind-Date="_startDate" Margin="Margin.Dense" Variant="Variant.Outlined" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="2">
+            <MudDatePicker Label="Sampai Tanggal (WIB)" @bind-Date="_endDate" Margin="Margin.Dense" Variant="Variant.Outlined" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="1" Class="d-flex align-center">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" OnClick="LoadDataAsync">
+                Filter
+            </MudButton>
+        </MudItem>
+    </MudGrid>
 </MudPaper>
 
+<!-- Tabel Audit Log -->
+<MudTable T="AuditLogDto" ServerData="ServerReload" @ref="_table" Dense="true" Hover="true" Striped="true" Elevation="2">
+    <HeaderContent>
+        <MudTh>Waktu (WIB / UTC)</MudTh>
+        <MudTh><MudTableSortLabel SortLabel="username" T="AuditLogDto">Pengguna</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="action" T="AuditLogDto">Aksi</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="entitytype" T="AuditLogDto">Entitas</MudTableSortLabel></MudTh>
+        <MudTh>ID Entitas</MudTh>
+        <MudTh>Correlation ID</MudTh>
+        <MudTh Style="text-align: right;">Detail Perubahan</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Waktu">
+            <strong>@JakartaTime.Format(context.TimestampUtc, "dd/MM/yyyy HH:mm:ss")</strong><br />
+            <small class="text-muted">UTC: @context.TimestampUtc.ToString("yyyy-MM-dd HH:mm:ss")</small>
+        </MudTd>
+        <MudTd DataLabel="Pengguna">
+            <strong>@(context.UserName ?? "Sistem")</strong>
+            @if (!string.IsNullOrEmpty(context.IpAddress))
+            {
+                <br /><small class="text-muted">IP: @context.IpAddress</small>
+            }
+        </MudTd>
+        <MudTd DataLabel="Aksi">
+            <MudChip T="string" Size="Size.Small" Color="@GetActionColor(context.Action)" Variant="Variant.Filled">
+                @context.Action
+            </MudChip>
+            @if (!string.IsNullOrEmpty(context.Reason))
+            {
+                <br /><small class="text-muted">Alasan: @context.Reason</small>
+            }
+        </MudTd>
+        <MudTd DataLabel="Entitas"><strong>@context.EntityType</strong></MudTd>
+        <MudTd DataLabel="ID"><code style="font-size: 0.8rem;">@context.EntityId</code></MudTd>
+        <MudTd DataLabel="Correlation ID">
+            <code style="font-size: 0.75rem;">@context.CorrelationId</code>
+        </MudTd>
+        <MudTd DataLabel="Detail" Style="text-align: right;">
+            <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Color="Color.Primary"
+                           OnClick="@(() => ShowDetail(context))" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudAlert Severity="Severity.Info" Class="my-4">Tidak ada catatan audit yang cocok dengan filter yang dipilih.</MudAlert>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+    </LoadingContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+    </PagerContent>
+</MudTable>
+
+<!-- Dialog Viewer Detail Perubahan Aman -->
 @if (_selectedLog != null)
 {
     <MudDialog @bind-Visible="_showDetailDialog" Options="_dialogOptions">
         <TitleContent>
-            <MudText Typo="Typo.h6">
-                Detail Perubahan: @_selectedLog.EntityType (@_selectedLog.Action)
-            </MudText>
+            <div class="d-flex align-center gap-2">
+                <MudIcon Icon="@Icons.Material.Filled.HistoryEdu" Color="Color.Primary" />
+                <MudText Typo="Typo.h6">
+                    Detail Audit: @_selectedLog.EntityType (@_selectedLog.Action)
+                </MudText>
+            </div>
         </TitleContent>
         <DialogContent>
-            <MudText Typo="Typo.subtitle2" Class="mb-1"><strong>Nilai Sebelumnya (Old Values):</strong></MudText>
-            <pre style="background: #f1f5f9; padding: 8px; border-radius: 4px; max-height: 150px; overflow-y: auto; font-size: 0.8rem;">@(_selectedLog.OldValues ?? "None")</pre>
+            <MudGrid Class="mb-3">
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Pengguna & Sesi:</MudText>
+                    <MudText Typo="Typo.body2"><strong>@(_selectedLog.UserName ?? "Sistem")</strong> (IP: @(_selectedLog.IpAddress ?? "-"))</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Waktu Kejadian (WIB):</MudText>
+                    <MudText Typo="Typo.body2"><strong>@JakartaTime.Format(_selectedLog.TimestampUtc, "dd MMMM yyyy HH:mm:ss")</strong></MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">ID Entitas:</MudText>
+                    <MudText Typo="Typo.body2"><code>@_selectedLog.EntityId</code></MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Correlation ID:</MudText>
+                    <MudText Typo="Typo.body2"><code>@_selectedLog.CorrelationId</code></MudText>
+                </MudItem>
+                @if (!string.IsNullOrEmpty(_selectedLog.Reason))
+                {
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Alasan Bisnis:</MudText>
+                        <MudText Typo="Typo.body2" Class="font-italic">"@_selectedLog.Reason"</MudText>
+                    </MudItem>
+                }
+            </MudGrid>
 
-            <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1"><strong>Nilai Baru (New Values):</strong></MudText>
-            <pre style="background: #f1f5f9; padding: 8px; border-radius: 4px; max-height: 150px; overflow-y: auto; font-size: 0.8rem;">@(_selectedLog.NewValues ?? "None")</pre>
+            <MudDivider Class="my-2" />
+
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.subtitle2" Class="mb-1" Color="Color.Error">
+                        <MudIcon Icon="@Icons.Material.Filled.RemoveCircleOutline" Size="Size.Small" Class="mr-1" />
+                        <strong>Nilai Sebelumnya (Old Values):</strong>
+                    </MudText>
+                    <pre style="background: #fef2f2; border: 1px solid #fecaca; padding: 10px; border-radius: 6px; max-height: 200px; overflow: auto; font-size: 0.8rem; font-family: monospace;">@(_selectedLog.OldValues ?? "None (Baru Dibuat)")</pre>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.subtitle2" Class="mb-1" Color="Color.Success">
+                        <MudIcon Icon="@Icons.Material.Filled.AddCircleOutline" Size="Size.Small" Class="mr-1" />
+                        <strong>Nilai Baru (New Values):</strong>
+                    </MudText>
+                    <pre style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 10px; border-radius: 6px; max-height: 200px; overflow: auto; font-size: 0.8rem; font-family: monospace;">@(_selectedLog.NewValues ?? "None (Dihapus)")</pre>
+                </MudItem>
+            </MudGrid>
 
             @if (!string.IsNullOrEmpty(_selectedLog.AffectedColumns))
             {
-                <MudText Typo="Typo.caption" Class="mt-2 d-block">Kolom diubah: @_selectedLog.AffectedColumns</MudText>
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+                    <strong>Kolom yang Dimodifikasi:</strong> @_selectedLog.AffectedColumns
+                </MudAlert>
             }
         </DialogContent>
         <DialogActions>
-            <MudButton Color="Color.Primary" OnClick="@(() => _showDetailDialog = false)">Tutup</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="@(() => _showDetailDialog = false)">
+                Tutup
+            </MudButton>
         </DialogActions>
     </MudDialog>
 }
 
 @code {
-    private List<Wms.Domain.Entities.System.AuditLog> _logs = new();
+    private MudTable<AuditLogDto>? _table;
+    private readonly AuditLogQuery _query = new() { PageSize = 25 };
+    private AuditLogSummaryDto? _summary;
+    private DateTime? _startDate;
+    private DateTime? _endDate;
+    private List<string> _availableActions = new();
+    private List<string> _availableEntityTypes = new();
     private bool _loading = false;
-    private string _searchString = string.Empty;
-    private string _selectedAction = string.Empty;
 
     private bool _showDetailDialog = false;
-    private Wms.Domain.Entities.System.AuditLog? _selectedLog;
-    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true };
+    private AuditLogDto? _selectedLog;
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Large, FullWidth = true };
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadLogsAsync();
+        await LoadFilterOptionsAsync();
+        await LoadSummaryAsync();
     }
 
-    private async Task LoadLogsAsync()
+    private async Task LoadFilterOptionsAsync()
     {
-        _loading = true;
         try
         {
-            var query = DbContext.AuditLogs.AsQueryable();
+            var actions = await AuditLogService.GetActionsAsync();
+            _availableActions = actions.ToList();
 
-            if (!string.IsNullOrWhiteSpace(_selectedAction))
-            {
-                query = query.Where(a => a.Action == _selectedAction);
-            }
-
-            if (!string.IsNullOrWhiteSpace(_searchString))
-            {
-                query = query.Where(a =>
-                    a.EntityType.Contains(_searchString) ||
-                    (a.EntityId != null && a.EntityId.Contains(_searchString)) ||
-                    (a.UserName != null && a.UserName.Contains(_searchString)));
-            }
-
-            _logs = await query
-                .OrderByDescending(a => a.TimestampUtc)
-                .Take(100)
-                .ToListAsync();
+            var entities = await AuditLogService.GetEntityTypesAsync();
+            _availableEntityTypes = entities.ToList();
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Gagal memuat log audit: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Gagal memuat opsi filter audit: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        try
+        {
+            _summary = await AuditLogService.GetAuditSummaryAsync();
+        }
+        catch
+        {
+            // Silently handle summary load failure
+        }
+    }
+
+    private async Task<TableData<AuditLogDto>> ServerReload(TableState state, CancellationToken token)
+    {
+        _loading = true;
+        _query.Page = state.Page + 1;
+        _query.PageSize = state.PageSize;
+        _query.SortBy = state.SortLabel;
+        _query.SortDescending = state.SortDirection == SortDirection.Descending;
+        _query.StartDate = _startDate;
+        _query.EndDate = _endDate;
+
+        try
+        {
+            var paged = await AuditLogService.GetAuditLogsAsync(_query, token);
+            return new TableData<AuditLogDto>
+            {
+                TotalItems = paged.TotalCount,
+                Items = paged.Items
+            };
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal memuat catatan audit: {ex.Message}", Severity.Error);
+            return new TableData<AuditLogDto> { TotalItems = 0, Items = Array.Empty<AuditLogDto>() };
         }
         finally
         {
@@ -142,7 +332,28 @@
         }
     }
 
-    private void ShowDetail(Wms.Domain.Entities.System.AuditLog log)
+    private async Task LoadDataAsync()
+    {
+        await LoadSummaryAsync();
+        if (_table != null)
+        {
+            await _table.ReloadServerData();
+        }
+    }
+
+    private async Task OnActionChanged(string action)
+    {
+        _query.Action = action;
+        await LoadDataAsync();
+    }
+
+    private async Task OnEntityTypeChanged(string entityType)
+    {
+        _query.EntityType = entityType;
+        await LoadDataAsync();
+    }
+
+    private void ShowDetail(AuditLogDto log)
     {
         _selectedLog = log;
         _showDetailDialog = true;
@@ -153,6 +364,8 @@
         "Create" => Color.Success,
         "Update" => Color.Info,
         "Delete" => Color.Error,
+        "Post" or "StockPosting" => Color.Primary,
+        "Reverse" or "StockReversal" => Color.Warning,
         _ => Color.Default
     };
 }

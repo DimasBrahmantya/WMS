@@ -69,6 +69,18 @@ build_metadata.AdditionalFiles.CssScope =
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xNYXN0ZXJcV2FyZWhvdXNlcy5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Reports/StockCard.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xSZXBvcnRzXFN0b2NrQ2FyZC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Reports/StockReport.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xSZXBvcnRzXFN0b2NrUmVwb3J0LnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Reports/ValuationReport.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xSZXBvcnRzXFZhbHVhdGlvblJlcG9ydC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
 [D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Stock/GoodsReceipts.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xTdG9ja1xHb29kc1JlY2VpcHRzLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 

@@ -73,6 +73,11 @@ public static class DependencyInjection
         services.AddScoped<Wms.Application.Features.Stock.StockOuts.IStockOutService, Services.Stock.StockOutService>();
         services.AddScoped<Wms.Application.Features.Stock.Reconciliation.IStockReconciliationService, Services.Stock.StockReconciliationService>();
 
+        // Dashboard, Reports & Audit Log Services (Tahap 4)
+        services.AddScoped<Wms.Application.Features.Dashboard.IDashboardService, Services.Dashboard.DashboardService>();
+        services.AddScoped<Wms.Application.Features.Reports.IReportService, Services.Reports.ReportService>();
+        services.AddScoped<Wms.Application.Features.Audit.IAuditLogService, Services.Audit.AuditLogService>();
+
         return services;
     }
 }

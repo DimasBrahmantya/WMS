@@ -1,0 +1,376 @@
+@page "/reports/stock-card"
+@attribute [Authorize(Roles = "SuperAdmin,AdminGudang,Supervisor,Auditor")]
+@inject IReportService ReportService
+@inject IProductService ProductService
+@inject IWarehouseService WarehouseService
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IClock Clock
+
+<PageTitle>Kartu Stok Barang - Warehouse Management System</PageTitle>
+
+<div class="mb-4 d-flex flex-wrap justify-space-between align-center gap-4">
+    <div>
+        <div class="d-flex align-center gap-2">
+            <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Primary">Kartu Stok (Stock Ledger)</MudText>
+            <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Filled">
+                REKONSTRUKSI HISTORIS LEDGER
+            </MudChip>
+        </div>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Buku besar kronologis mutasi persediaan barang dengan saldo awal, mutasi masuk/keluar, dan saldo berjalan.
+        </MudText>
+    </div>
+
+    <div class="d-flex align-center gap-2">
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="LoadStockCardAsync" Disabled="_loading || !_selectedProductId.HasValue">
+            Refresh
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Assessment"
+                   Href="/reports/stock">
+            Stok Saat Ini
+        </MudButton>
+    </div>
+</div>
+
+<!-- Filter Selection Bar -->
+<MudPaper Elevation="2" Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudAutocomplete T="ProductDto" Label="Pilih Barang (Wajib)" Value="_selectedProduct"
+                             ValueChanged="OnProductSelected" SearchFunc="SearchProductsAsync"
+                             ToStringFunc="@(p => p == null ? "" : $"{p.Sku} - {p.Name} ({p.UnitName})")"
+                             ResetValueOnEmptyText="true" CoerceText="true" CoerceValue="true"
+                             Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" Required="true"
+                             AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Primary" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="Guid?" Label="Gudang" Value="_query.WarehouseId" ValueChanged="OnWarehouseChanged"
+                       Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+                <MudSelectItem T="Guid?" Value="@((Guid?)null)">Semua Gudang</MudSelectItem>
+                @foreach (var wh in _availableWarehouses)
+                {
+                    <MudSelectItem T="Guid?" Value="@((Guid?)wh.Id)">@wh.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="2">
+            <MudDatePicker Label="Dari Tanggal (WIB)" @bind-Date="_startDate" Margin="Margin.Dense" Variant="Variant.Outlined" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="2">
+            <MudDatePicker Label="Sampai Tanggal (WIB)" @bind-Date="_endDate" Margin="Margin.Dense" Variant="Variant.Outlined" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="1" Class="d-flex align-center">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" OnClick="LoadStockCardAsync"
+                       Disabled="_loading || !_selectedProductId.HasValue">
+                Filter
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+
+@if (_report != null)
+{
+    <!-- Panel Header Barang & Saldo Komparatif (Saldo Saat Ini vs Historis) -->
+    <MudPaper Elevation="2" Class="pa-4 mb-4">
+        <div class="d-flex flex-wrap justify-space-between align-center mb-3">
+            <div>
+                <MudText Typo="Typo.h6" Class="font-weight-bold">@_report.ProductName</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    SKU: <strong>@_report.Sku</strong> | Kategori: @_report.CategoryName | Satuan: @_report.UnitName
+                    @if (!string.IsNullOrEmpty(_report.WarehouseName))
+                    {
+                        <span> | Gudang: <strong>@_report.WarehouseName</strong></span>
+                    }
+                </MudText>
+            </div>
+            <MudChip T="string" Color="Color.Default" Size="Size.Small">
+                Periode: @_report.StartDateUtc.ToString("dd/MM/yyyy") - @_report.EndDateUtc.ToString("dd/MM/yyyy")
+            </MudChip>
+        </div>
+
+        <MudDivider Class="my-3" />
+
+        <!-- Komparasi Saldo Historis vs Saldo Saat Ini -->
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Elevation="1" Class="pa-3 text-center" Style="background: #f8fafc; border-left: 4px solid #64748b;">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Saldo Awal Historis</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">
+                        @_report.OpeningBalance.ToString("N2") @_report.UnitName
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Per awal periode filter</MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="2">
+                <MudPaper Elevation="1" Class="pa-3 text-center" Style="background: #f0fdf4; border-left: 4px solid var(--mud-palette-success);">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Total Masuk (IN)</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Success">
+                        +@_report.TotalQuantityIn.ToString("N2")
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Success">Periode Ini</MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="2">
+                <MudPaper Elevation="1" Class="pa-3 text-center" Style="background: #fef2f2; border-left: 4px solid var(--mud-palette-error);">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Total Keluar (OUT)</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Error">
+                        -@_report.TotalQuantityOut.ToString("N2")
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Error">Periode Ini</MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="2">
+                <MudPaper Elevation="1" Class="pa-3 text-center" Style="background: #eff6ff; border-left: 4px solid var(--mud-palette-info);">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Saldo Akhir Historis</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Info">
+                        @_report.ClosingBalance.ToString("N2") @_report.UnitName
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Info">Per akhir periode filter</MudText>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Elevation="1" Class="pa-3 text-center" Style="background: #fffbeb; border: 2px solid var(--mud-palette-warning);">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="font-weight-bold">
+                        SALDO SAAT INI (REAL-TIME)
+                    </MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Warning">
+                        @_report.CurrentRealTimeBalance.ToString("N2") @_report.UnitName
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Saldo fisik aktif saat ini</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <!-- Tabel Ledger Pergerakan Kronologis -->
+    <MudPaper Elevation="2" Class="pa-4">
+        <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-3">
+            Buku Besar Mutasi Kronologis (Ledger Append-Only)
+        </MudText>
+
+        @if (_report.Lines.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true">
+                Tidak ada mutasi barang pada periode tanggal ini. Saldo tetap sebesar saldo awal (@_report.OpeningBalance.ToString("N2") @_report.UnitName).
+            </MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_report.Lines" Dense="true" Hover="true" Striped="true" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Waktu (WIB)</MudTh>
+                    <MudTh>No. Dokumen / Mutasi</MudTh>
+                    <MudTh>Tipe Transaksi</MudTh>
+                    <MudTh>Gudang & Rak</MudTh>
+                    <MudTh Style="text-align: right;">Masuk (IN)</MudTh>
+                    <MudTh Style="text-align: right;">Keluar (OUT)</MudTh>
+                    <MudTh Style="text-align: right; background: #f1f5f9;">Saldo Berjalan</MudTh>
+                    <MudTh Style="text-align: right;">Biaya Satuan</MudTh>
+                    <MudTh Style="text-align: right;">Total Nilai</MudTh>
+                    <MudTh>Operator</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Waktu">
+                        @JakartaTime.Format(context.TimestampUtc, "dd/MM/yyyy HH:mm")
+                    </MudTd>
+                    <MudTd DataLabel="Dokumen">
+                        <strong>@context.SourceDocumentNumber</strong><br />
+                        <small class="text-muted">@context.MovementNumber</small>
+                    </MudTd>
+                    <MudTd DataLabel="Tipe">
+                        <MudChip T="string" Size="Size.Small" Color="@(context.Direction == MovementDirection.In ? Color.Success : Color.Error)">
+                            @(context.Direction == MovementDirection.In ? "MASUK" : "KELUAR")
+                        </MudChip>
+                        <br />
+                        <small class="text-muted">@context.MovementType</small>
+                        @if (!string.IsNullOrEmpty(context.Reason))
+                        {
+                            <br /><small class="text-muted">Alasan: @context.Reason</small>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Lokasi">
+                        <strong>@context.WarehouseName</strong><br />
+                        <small class="text-muted">Rak: @context.LocationCode</small>
+                    </MudTd>
+                    <MudTd DataLabel="Masuk" Style="text-align: right; color: var(--mud-palette-success); font-weight: bold;">
+                        @(context.QuantityIn > 0 ? $"+{context.QuantityIn:N2}" : "-")
+                    </MudTd>
+                    <MudTd DataLabel="Keluar" Style="text-align: right; color: var(--mud-palette-error); font-weight: bold;">
+                        @(context.QuantityOut > 0 ? $"-{context.QuantityOut:N2}" : "-")
+                    </MudTd>
+                    <MudTd DataLabel="Saldo Berjalan" Style="text-align: right; font-weight: bold; background: #f1f5f9;">
+                        @context.RunningBalance.ToString("N2") @_report.UnitName
+                    </MudTd>
+                    <MudTd DataLabel="Biaya Satuan" Style="text-align: right;">
+                        Rp @context.UnitCost.ToString("N0")
+                    </MudTd>
+                    <MudTd DataLabel="Total Nilai" Style="text-align: right;">
+                        Rp @context.TotalValue.ToString("N0")
+                    </MudTd>
+                    <MudTd DataLabel="Operator">
+                        @context.OperatorName
+                        @if (context.Status == MovementStatus.Reversed)
+                        {
+                            <br /><MudChip T="string" Color="Color.Dark" Size="Size.Small">Dibatalkan</MudChip>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+else if (!_selectedProductId.HasValue)
+{
+    <MudAlert Severity="Severity.Normal" Class="my-4">
+        Silakan pilih barang pada pencarian di atas untuk melihat buku besar kartu stok.
+    </MudAlert>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "productId")]
+    public Guid? UrlProductId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "warehouseId")]
+    public Guid? UrlWarehouseId { get; set; }
+
+    private StockCardReportDto? _report;
+    private readonly StockCardQuery _query = new();
+    private Guid? _selectedProductId;
+    private ProductDto? _selectedProduct;
+    private DateTime? _startDate;
+    private DateTime? _endDate;
+    private List<WarehouseDto> _availableWarehouses = new();
+    private bool _loading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = JakartaTime.Today;
+        _startDate = new DateTime(today.Year, today.Month, 1);
+        _endDate = today;
+
+        if (UrlWarehouseId.HasValue)
+        {
+            _query.WarehouseId = UrlWarehouseId.Value;
+        }
+
+        await LoadWarehousesAsync();
+
+        if (UrlProductId.HasValue)
+        {
+            _selectedProductId = UrlProductId.Value;
+            var productResult = await ProductService.GetProductByIdAsync(UrlProductId.Value);
+            if (productResult.Succeeded && productResult.Data != null)
+            {
+                _selectedProduct = productResult.Data;
+                await LoadStockCardAsync();
+            }
+        }
+    }
+
+    private async Task LoadWarehousesAsync()
+    {
+        try
+        {
+            var warehouses = await WarehouseService.GetActiveWarehousesAsync();
+            _availableWarehouses = warehouses.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal memuat daftar gudang: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task<IEnumerable<ProductDto>> SearchProductsAsync(string value, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await ProductService.GetProductsAsync(new GetProductsQuery
+            {
+                Search = value,
+                PageSize = 20,
+                IsActive = true
+            }, cancellationToken);
+
+            return result.Items;
+        }
+        catch
+        {
+            return Array.Empty<ProductDto>();
+        }
+    }
+
+    private async Task OnProductSelected(ProductDto? product)
+    {
+        _selectedProduct = product;
+        _selectedProductId = product?.Id;
+        if (_selectedProductId.HasValue)
+        {
+            await LoadStockCardAsync();
+        }
+        else
+        {
+            _report = null;
+        }
+    }
+
+    private async Task OnWarehouseChanged(Guid? warehouseId)
+    {
+        _query.WarehouseId = warehouseId;
+        if (_selectedProductId.HasValue)
+        {
+            await LoadStockCardAsync();
+        }
+    }
+
+    private async Task LoadStockCardAsync()
+    {
+        if (!_selectedProductId.HasValue)
+        {
+            Snackbar.Add("Pilih barang terlebih dahulu.", Severity.Warning);
+            return;
+        }
+
+        _loading = true;
+        _query.ProductId = _selectedProductId.Value;
+        _query.StartDate = _startDate;
+        _query.EndDate = _endDate;
+
+        try
+        {
+            var result = await ReportService.GetStockCardReportAsync(_query);
+            if (result.Succeeded)
+            {
+                _report = result.Data;
+            }
+            else
+            {
+                Snackbar.Add(result.ErrorMessage ?? "Gagal memuat kartu stok.", Severity.Error);
+                _report = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Terjadi kesalahan: {ex.Message}", Severity.Error);
+            _report = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

@@ -1,0 +1,350 @@
+@page "/reports/stock"
+@attribute [Authorize(Roles = "SuperAdmin,AdminGudang,Supervisor,Auditor")]
+@inject IReportService ReportService
+@inject IWarehouseService WarehouseService
+@inject ICategoryService CategoryService
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IClock Clock
+
+<PageTitle>Laporan Stok Saat Ini - Warehouse Management System</PageTitle>
+
+<div class="mb-4 d-flex flex-wrap justify-space-between align-center gap-4">
+    <div>
+        <div class="d-flex align-center gap-2">
+            <MudText Typo="Typo.h5" Class="font-weight-bold" Color="Color.Primary">Laporan Stok Saat Ini</MudText>
+            <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Filled">
+                SALDO SAAT INI (REAL-TIME)
+            </MudChip>
+        </div>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Data saldo fisik (on-hand) dan reservasi terkini per gudang & rak. Berbeda dengan saldo historis pada kartu stok.
+        </MudText>
+    </div>
+
+    <div class="d-flex align-center gap-2">
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="LoadDataAsync" Disabled="_loading">
+            Refresh
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.ReceiptLong"
+                   Href="/reports/stock-card">
+            Buka Kartu Stok
+        </MudButton>
+    </div>
+</div>
+
+<!-- Banner Penjelasan Saldo Saat Ini vs Historis -->
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+    <strong>Pemberitahuan Saldo:</strong> Laporan ini menyajikan <strong>Saldo Saat Ini (Real-Time)</strong> yang bersumber langsung dari saldo fisik aktif di gudang. Untuk meninjau rekonstruksi saldo pada tanggal lampau atau riwayat pergerakan barang, silakan gunakan menu <strong>Kartu Stok</strong>.
+</MudAlert>
+
+<!-- Kartu Ringkasan -->
+@if (_summary != null)
+{
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="2" Class="pa-3 d-flex align-center">
+                <MudAvatar Color="Color.Primary" Size="Size.Large" Class="mr-3">
+                    <MudIcon Icon="@Icons.Material.Filled.Inventory2" />
+                </MudAvatar>
+                <div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Total SKU Terdaftar</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">@_summary.TotalSkuCount SKU</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="2" Class="pa-3 d-flex align-center cursor-pointer" @onclick="@(() => FilterByStatus("low"))">
+                <MudAvatar Color="Color.Warning" Size="Size.Large" Class="mr-3">
+                    <MudIcon Icon="@Icons.Material.Filled.WarningAmber" />
+                </MudAvatar>
+                <div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Barang Stok Rendah (&le; Min)</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Warning">@_summary.TotalLowStockCount Barang</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" sm="4">
+            <MudPaper Elevation="2" Class="pa-3 d-flex align-center cursor-pointer" @onclick="@(() => FilterByStatus("out"))">
+                <MudAvatar Color="Color.Error" Size="Size.Large" Class="mr-3">
+                    <MudIcon Icon="@Icons.Material.Filled.RemoveShoppingCart" />
+                </MudAvatar>
+                <div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Barang Stok Habis (0)</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold" Color="Color.Error">@_summary.TotalOutOfStockCount Barang</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @if (_summary.UnitTotals.Count > 0)
+    {
+        <MudPaper Elevation="1" Class="pa-3 mb-4 d-flex flex-wrap align-center gap-2">
+            <MudText Typo="Typo.caption" Class="font-weight-bold mr-2">Total per Satuan:</MudText>
+            @foreach (var unit in _summary.UnitTotals)
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary">
+                    @unit.TotalQuantity.ToString("N2") @unit.UnitName
+                </MudChip>
+            }
+        </MudPaper>
+    }
+}
+
+<!-- Filter Bar -->
+<MudPaper Elevation="2" Class="pa-4 mb-4">
+    <div class="d-flex flex-wrap gap-4 align-center">
+        <MudTextField @bind-Value="_query.Search" Placeholder="Cari SKU, Barcode, Nama Barang, Lokasi..."
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Class="mt-0" Immediate="true" DebounceInterval="300" OnDebounceIntervalElapsed="LoadDataAsync"
+                      Style="min-width: 280px;" />
+
+        <MudSelect T="Guid?" Label="Gudang" Value="@_query.WarehouseId" ValueChanged="OnWarehouseChanged"
+                   Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width: 180px;">
+            <MudSelectItem T="Guid?" Value="@((Guid?)null)">Semua Gudang</MudSelectItem>
+            @foreach (var wh in _availableWarehouses)
+            {
+                <MudSelectItem T="Guid?" Value="@((Guid?)wh.Id)">@wh.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudSelect T="Guid?" Label="Kategori" Value="@_query.CategoryId" ValueChanged="OnCategoryChanged"
+                   Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width: 180px;">
+            <MudSelectItem T="Guid?" Value="@((Guid?)null)">Semua Kategori</MudSelectItem>
+            @foreach (var cat in _availableCategories)
+            {
+                <MudSelectItem T="Guid?" Value="@((Guid?)cat.Id)">@cat.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudSelect T="string" Label="Status Stok" Value="@_query.StockStatus" ValueChanged="OnStatusChanged"
+                   Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width: 150px;">
+            <MudSelectItem Value="@("all")">Semua Status</MudSelectItem>
+            <MudSelectItem Value="@("safe")">Aman (&gt; Min)</MudSelectItem>
+            <MudSelectItem Value="@("low")">Stok Rendah (&le; Min)</MudSelectItem>
+            <MudSelectItem Value="@("out")">Habis (0)</MudSelectItem>
+        </MudSelect>
+
+        @if (HasActiveFilters())
+        {
+            <MudButton Variant="Variant.Text" Color="Color.Error" StartIcon="@Icons.Material.Filled.Clear" OnClick="ResetFilters">
+                Reset Filter
+            </MudButton>
+        }
+    </div>
+</MudPaper>
+
+<!-- Tabel Stok Saat Ini -->
+<MudTable T="StockReportItemDto" ServerData="ServerReload" @ref="_table" Dense="true" Hover="true" Striped="true" Elevation="2">
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortLabel="sku" T="StockReportItemDto">SKU / Barcode</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="productname" T="StockReportItemDto">Nama Barang</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="category" T="StockReportItemDto">Kategori</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="warehouse" T="StockReportItemDto">Gudang & Rak</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align: right;"><MudTableSortLabel SortLabel="onhand" T="StockReportItemDto">Fisik (On Hand)</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align: right;">Dipesan (Reserved)</MudTh>
+        <MudTh Style="text-align: right;"><MudTableSortLabel SortLabel="available" T="StockReportItemDto">Tersedia</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align: center;">Status Stok</MudTh>
+        <MudTh Style="text-align: center;">Aksi</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="SKU">
+            <strong>@context.Sku</strong>
+            @if (!string.IsNullOrEmpty(context.Barcode))
+            {
+                <br /><small class="text-muted">Barcode: @context.Barcode</small>
+            }
+        </MudTd>
+        <MudTd DataLabel="Nama">@context.ProductName</MudTd>
+        <MudTd DataLabel="Kategori">@context.CategoryName</MudTd>
+        <MudTd DataLabel="Gudang">
+            <strong>@context.WarehouseName</strong><br />
+            <small class="text-muted">Rak: @context.LocationCode</small>
+            @if (!string.IsNullOrEmpty(context.BatchNumber))
+            {
+                <span class="badge badge-light ml-1">Batch: @context.BatchNumber</span>
+            }
+        </MudTd>
+        <MudTd DataLabel="On Hand" Style="text-align: right; font-weight: bold;">
+            @context.OnHand.ToString("N2") @context.UnitName
+        </MudTd>
+        <MudTd DataLabel="Reserved" Style="text-align: right; color: var(--mud-palette-warning);">
+            @context.Reserved.ToString("N2") @context.UnitName
+        </MudTd>
+        <MudTd DataLabel="Tersedia" Style="text-align: right; font-weight: bold; color: var(--mud-palette-success);">
+            @context.Available.ToString("N2") @context.UnitName
+        </MudTd>
+        <MudTd DataLabel="Status" Style="text-align: center;">
+            <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(context.Status)" Variant="Variant.Filled">
+                @context.Status
+            </MudChip>
+            <br />
+            <small class="text-muted">Min: @context.MinStock.ToString("N0")</small>
+        </MudTd>
+        <MudTd Style="text-align: center;">
+            <MudTooltip Text="Buka Riwayat Kartu Stok">
+                <MudIconButton Icon="@Icons.Material.Filled.ReceiptLong" Color="Color.Primary" Size="Size.Small"
+                               OnClick="@(() => OpenStockCard(context.ProductId, context.WarehouseId))" />
+            </MudTooltip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudAlert Severity="Severity.Info" Class="my-4">Tidak ada data persediaan stok yang cocok dengan kriteria filter.</MudAlert>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+    </LoadingContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+    </PagerContent>
+</MudTable>
+
+@code {
+    [SupplyParameterFromQuery(Name = "status")]
+    public string? UrlStatus { get; set; }
+
+    [SupplyParameterFromQuery(Name = "warehouseId")]
+    public Guid? UrlWarehouseId { get; set; }
+
+    private MudTable<StockReportItemDto>? _table;
+    private readonly StockReportQuery _query = new() { PageSize = 25 };
+    private StockReportSummaryDto? _summary;
+    private List<WarehouseDto> _availableWarehouses = new();
+    private List<CategoryDto> _availableCategories = new();
+    private bool _loading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(UrlStatus))
+        {
+            _query.StockStatus = UrlStatus;
+        }
+
+        if (UrlWarehouseId.HasValue)
+        {
+            _query.WarehouseId = UrlWarehouseId.Value;
+        }
+
+        await LoadFilterMastersAsync();
+        await LoadSummaryAsync();
+    }
+
+    private async Task LoadFilterMastersAsync()
+    {
+        try
+        {
+            var warehouses = await WarehouseService.GetActiveWarehousesAsync();
+            _availableWarehouses = warehouses.ToList();
+
+            var categories = await CategoryService.GetActiveCategoriesAsync();
+            _availableCategories = categories.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal memuat referensi filter: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task<TableData<StockReportItemDto>> ServerReload(TableState state, CancellationToken token)
+    {
+        _loading = true;
+        _query.Page = state.Page + 1;
+        _query.PageSize = state.PageSize;
+        _query.SortBy = state.SortLabel;
+        _query.SortDescending = state.SortDirection == SortDirection.Descending;
+
+        try
+        {
+            var paged = await ReportService.GetCurrentStockReportAsync(_query, token);
+            return new TableData<StockReportItemDto>
+            {
+                TotalItems = paged.TotalCount,
+                Items = paged.Items
+            };
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal memuat laporan stok: {ex.Message}", Severity.Error);
+            return new TableData<StockReportItemDto> { TotalItems = 0, Items = Array.Empty<StockReportItemDto>() };
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        try
+        {
+            _summary = await ReportService.GetStockReportSummaryAsync(_query);
+        }
+        catch
+        {
+            // Silently handle summary load failure
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        await LoadSummaryAsync();
+        if (_table != null)
+        {
+            await _table.ReloadServerData();
+        }
+    }
+
+    private async Task OnWarehouseChanged(Guid? warehouseId)
+    {
+        _query.WarehouseId = warehouseId;
+        await LoadDataAsync();
+    }
+
+    private async Task OnCategoryChanged(Guid? categoryId)
+    {
+        _query.CategoryId = categoryId;
+        await LoadDataAsync();
+    }
+
+    private async Task OnStatusChanged(string status)
+    {
+        _query.StockStatus = status;
+        await LoadDataAsync();
+    }
+
+    private async Task FilterByStatus(string status)
+    {
+        _query.StockStatus = status;
+        await LoadDataAsync();
+    }
+
+    private bool HasActiveFilters() =>
+        !string.IsNullOrWhiteSpace(_query.Search) ||
+        _query.WarehouseId.HasValue ||
+        _query.CategoryId.HasValue ||
+        (_query.StockStatus != null && _query.StockStatus != "all");
+
+    private async Task ResetFilters()
+    {
+        _query.Search = string.Empty;
+        _query.WarehouseId = null;
+        _query.CategoryId = null;
+        _query.StockStatus = "all";
+        await LoadDataAsync();
+    }
+
+    private void OpenStockCard(Guid productId, Guid warehouseId)
+    {
+        Navigation.NavigateTo($"/reports/stock-card?productId={productId}&warehouseId={warehouseId}");
+    }
+
+    private Color GetStatusColor(string status) => status switch
+    {
+        "Habis" => Color.Error,
+        "Rendah" => Color.Warning,
+        _ => Color.Success
+    };
+}
