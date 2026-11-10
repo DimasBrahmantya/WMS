@@ -1,0 +1,742 @@
+@page "/stock/out"
+@attribute [Authorize]
+@inject IStockOutService StockOutService
+@inject IWarehouseService WarehouseService
+@inject IProductService ProductService
+@inject ICustomerService CustomerService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Barang Keluar (Goods Issues) — WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="px-0 py-2 mb-2" />
+
+    <div class="d-flex flex-wrap justify-space-between align-center mb-4 gap-2">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Barang Keluar (Goods Issues)</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Pengeluaran barang untuk penjualan, pemakaian internal, atau pembuangan dengan validasi stok tersedia</MudText>
+        </div>
+        <AuthorizeView Policy="@Permissions.StockOutCreate">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+                    Pengeluaran Baru
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </div>
+
+    <MudCard Elevation="2">
+        <MudCardContent Class="pa-4">
+            <!-- Filter Bar -->
+            <MudGrid Class="mb-3" Spacing="2">
+                <MudItem xs="12" sm="6" md="3">
+                    <MudTextField @bind-Value="_searchString"
+                                  Placeholder="Cari nomor dokumen, penerima, pelanggan..."
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  DebounceInterval="400"
+                                  OnDebounceIntervalElapsed="OnSearchChanged"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="Guid?" Value="_selectedWarehouseId" ValueChanged="OnWarehouseChanged" Label="Gudang" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="Guid?" Value="null">Semua Gudang</MudSelectItem>
+                        @foreach (var wh in _warehouses)
+                        {
+                            <MudSelectItem T="Guid?" Value="@((Guid?)wh.Id)">@wh.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="StockOutType?" Value="_selectedType" ValueChanged="OnTypeChanged" Label="Tipe Pengeluaran" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="StockOutType?" Value="null">Semua Tipe</MudSelectItem>
+                        <MudSelectItem T="StockOutType?" Value="StockOutType.CustomerDelivery">Kirim ke Pelanggan</MudSelectItem>
+                        <MudSelectItem T="StockOutType?" Value="StockOutType.InternalUsage">Pemakaian Internal</MudSelectItem>
+                        <MudSelectItem T="StockOutType?" Value="StockOutType.Disposal">Pembuangan / Rusak</MudSelectItem>
+                        <MudSelectItem T="StockOutType?" Value="StockOutType.Other">Lainnya</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="DocumentStatus?" Value="_selectedStatus" ValueChanged="OnStatusChanged" Label="Status Dokumen" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomCenter" Clearable="true">
+                        <MudSelectItem T="DocumentStatus?" Value="null">Semua Status</MudSelectItem>
+                        <MudSelectItem T="DocumentStatus?" Value="DocumentStatus.Draft">Draft</MudSelectItem>
+                        <MudSelectItem T="DocumentStatus?" Value="DocumentStatus.Posted">Posted</MudSelectItem>
+                        <MudSelectItem T="DocumentStatus?" Value="DocumentStatus.Reversed">Reversed</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <!-- Table -->
+            <MudTable ServerData="LoadServerData"
+                      @ref="_table"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Bordered="false"
+                      Elevation="0">
+                <HeaderContent>
+                    <MudTh><MudTableSortLabel SortLabel="doc" T="StockOutDto">No. Dokumen</MudTableSortLabel></MudTh>
+                    <MudTh>Tanggal</MudTh>
+                    <MudTh>Gudang</MudTh>
+                    <MudTh>Tipe & Tujuan</MudTh>
+                    <MudTh Style="text-align:right;">Total Item</MudTh>
+                    <MudTh Style="text-align:right;">Total Biaya (IDR)</MudTh>
+                    <MudTh Style="text-align:center;">Status</MudTh>
+                    <MudTh Style="text-align:right;">Aksi</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="No. Dokumen">
+                        <MudLink Typo="Typo.body2" Class="font-weight-bold" OnClick="@(() => OpenDetailDialog(context.Id))">
+                            @context.IssueNumber
+                        </MudLink>
+                    </MudTd>
+                    <MudTd DataLabel="Tanggal">
+                        @context.DocumentDate.ToString("dd MMM yyyy")
+                    </MudTd>
+                    <MudTd DataLabel="Gudang">
+                        @context.WarehouseName
+                    </MudTd>
+                    <MudTd DataLabel="Tipe & Tujuan">
+                        <div class="font-weight-medium">
+                            @switch (context.IssueType)
+                            {
+                                case StockOutType.CustomerDelivery:
+                                    <span>Penjualan / Kirim</span>
+                                    break;
+                                case StockOutType.InternalUsage:
+                                    <span>Pemakaian Internal</span>
+                                    break;
+                                case StockOutType.Disposal:
+                                    <span>Pembuangan</span>
+                                    break;
+                                default:
+                                    <span>Lainnya</span>
+                                    break;
+                            }
+                        </div>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@(context.CustomerName ?? context.Recipient ?? "-")</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Total Item" Style="text-align:right;">
+                        @context.TotalQuantity.ToString("N2")
+                    </MudTd>
+                    <MudTd DataLabel="Total Biaya" Style="text-align:right;">
+                        @context.TotalAmount.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("id-ID"))
+                    </MudTd>
+                    <MudTd DataLabel="Status" Style="text-align:center;">
+                        @switch (context.Status)
+                        {
+                            case DocumentStatus.Draft:
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Filled">Draft</MudChip>
+                                break;
+                            case DocumentStatus.PendingApproval:
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled">Menunggu Approval</MudChip>
+                                break;
+                            case DocumentStatus.Posted:
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">Posted</MudChip>
+                                break;
+                            case DocumentStatus.Reversed:
+                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">Reversed</MudChip>
+                                break;
+                            case DocumentStatus.Cancelled:
+                                <MudChip T="string" Size="Size.Small" Color="Color.Dark" Variant="Variant.Filled">Batal</MudChip>
+                                break;
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Aksi" Style="text-align:right;">
+                        <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Color="Color.Info" OnClick="@(() => OpenDetailDialog(context.Id))" aria-label="Lihat Rincian" />
+
+                        @if (context.Status == DocumentStatus.Draft)
+                        {
+                            <AuthorizeView Policy="@Permissions.StockOutPost">
+                                <Authorized Context="auth">
+                                    <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Color="Color.Success" OnClick="@(() => ConfirmPost(context))" aria-label="Posting Pengeluaran" />
+                                </Authorized>
+                            </AuthorizeView>
+                            <AuthorizeView Policy="@Permissions.StockOutCreate">
+                                <Authorized Context="auth">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteDraft(context))" aria-label="Hapus Draft" />
+                                </Authorized>
+                            </AuthorizeView>
+                        }
+                        else if (context.Status == DocumentStatus.Posted)
+                        {
+                            <AuthorizeView Policy="@Permissions.StockOutReverse">
+                                <Authorized Context="auth">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Undo" Size="Size.Small" Color="Color.Warning" OnClick="@(() => OpenReverseDialog(context))" aria-label="Batalkan (Reversal)" />
+                                </Authorized>
+                            </AuthorizeView>
+                        }
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Align="Align.Center" Class="py-6 text-muted">Tidak ada dokumen pengeluaran barang.</MudText>
+                </NoRecordsContent>
+                <PagerContent>
+                    <MudTablePager RowsPerPageString="Baris per halaman:" InfoFormat="{first_item}-{last_item} dari {all_items}" />
+                </PagerContent>
+            </MudTable>
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
+
+<!-- Detail Dialog -->
+<MudDialog @bind-Visible="_isDetailDialogOpen" Options="_detailDialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Rincian Dokumen Pengeluaran: @_selectedStockOut?.IssueNumber</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_selectedStockOut != null)
+        {
+            <MudGrid Spacing="2" Class="mb-4">
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Gudang Sumber</MudText>
+                    <MudText Typo="Typo.body2" Class="font-weight-bold">@_selectedStockOut.WarehouseName</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Tipe Pengeluaran</MudText>
+                    <MudText Typo="Typo.body2">@_selectedStockOut.IssueType</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Penerima / Pelanggan</MudText>
+                    <MudText Typo="Typo.body2">@(_selectedStockOut.CustomerName ?? _selectedStockOut.Recipient ?? "-")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Tanggal Dokumen</MudText>
+                    <MudText Typo="Typo.body2">@_selectedStockOut.DocumentDate.ToString("dd MMMM yyyy")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Dibuat Oleh</MudText>
+                    <MudText Typo="Typo.body2">@_selectedStockOut.CreatedByUserName (@_selectedStockOut.CreatedAtUtc.ToString("dd/MM/yyyy HH:mm"))</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Status Dokumen</MudText>
+                    <div>
+                        @if (_selectedStockOut.Status == DocumentStatus.Posted)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success">Posted oleh @_selectedStockOut.PostedByUserName (@_selectedStockOut.PostedAtUtc?.ToString("dd/MM/yyyy HH:mm"))</MudChip>
+                        }
+                        else if (_selectedStockOut.Status == DocumentStatus.Reversed)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error">Reversed: @_selectedStockOut.ReversalReason</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default">Draft</MudChip>
+                        }
+                    </div>
+                </MudItem>
+                @if (!string.IsNullOrEmpty(_selectedStockOut.Notes))
+                {
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Catatan</MudText>
+                        <MudText Typo="Typo.body2">@_selectedStockOut.Notes</MudText>
+                    </MudItem>
+                }
+            </MudGrid>
+
+            <MudDivider Class="my-3" />
+            <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">Daftar Barang Keluar</MudText>
+
+            <MudTable Items="_selectedStockOut.Lines" Dense="true" Striped="true" Elevation="0" Bordered="true">
+                <HeaderContent>
+                    <MudTh>SKU & Nama Barang</MudTh>
+                    <MudTh>Lokasi Rak</MudTh>
+                    <MudTh Style="text-align:right;">Kuantitas</MudTh>
+                    <MudTh Style="text-align:right;">Biaya Satuan Rata-Rata</MudTh>
+                    <MudTh Style="text-align:right;">Total Biaya</MudTh>
+                </HeaderContent>
+                <RowTemplate Context="line">
+                    <MudTd>
+                        <div class="font-weight-bold">@line.ProductSku</div>
+                        <div class="text-muted">@line.ProductName</div>
+                    </MudTd>
+                    <MudTd>@line.WarehouseLocationCode - @line.WarehouseLocationName</MudTd>
+                    <MudTd Style="text-align:right;">@line.Quantity.ToString("N2") @line.UnitName</MudTd>
+                    <MudTd Style="text-align:right;">@line.UnitCost.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("id-ID"))</MudTd>
+                    <MudTd Style="text-align:right;" Class="font-weight-bold">@line.TotalCost.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("id-ID"))</MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <div class="d-flex justify-end mt-3 gap-4">
+                <MudText Typo="Typo.subtitle1">Total Kuantitas: <b>@_selectedStockOut.TotalQuantity.ToString("N2")</b></MudText>
+                <MudText Typo="Typo.subtitle1" Color="Color.Primary">Total Biaya: <b>@_selectedStockOut.TotalAmount.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("id-ID"))</b></MudText>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (_selectedStockOut?.Status == DocumentStatus.Draft)
+        {
+            <AuthorizeView Policy="@Permissions.StockOutPost">
+                <Authorized>
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.CheckCircle" OnClick="@(() => ConfirmPost(_selectedStockOut))">
+                        Posting Pengeluaran
+                    </MudButton>
+                </Authorized>
+            </AuthorizeView>
+        }
+        else if (_selectedStockOut?.Status == DocumentStatus.Posted)
+        {
+            <AuthorizeView Policy="@Permissions.StockOutReverse">
+                <Authorized>
+                    <MudButton Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Undo" OnClick="@(() => OpenReverseDialog(_selectedStockOut))">
+                        Batalkan (Reversal)
+                    </MudButton>
+                </Authorized>
+            </AuthorizeView>
+        }
+        <MudButton Variant="Variant.Outlined" OnClick="() => _isDetailDialogOpen = false">Tutup</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Create Stock Out Dialog -->
+<MudDialog @bind-Visible="_isCreateDialogOpen" Options="_formDialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Outbox" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Pengeluaran Barang Baru</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid" @bind-Value="_createModel.WarehouseId" SelectedValuesChanged="OnCreateWarehouseChanged" Label="Gudang Sumber *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var wh in _warehouses)
+                    {
+                        <MudSelectItem T="Guid" Value="@wh.Id">@wh.Name (@wh.Code)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="StockOutType" @bind-Value="_createModel.IssueType" Label="Tipe Pengeluaran *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem T="StockOutType" Value="StockOutType.CustomerDelivery">Pengiriman ke Pelanggan / Penjualan</MudSelectItem>
+                    <MudSelectItem T="StockOutType" Value="StockOutType.InternalUsage">Pemakaian Internal</MudSelectItem>
+                    <MudSelectItem T="StockOutType" Value="StockOutType.Disposal">Pembuangan / Barang Rusak</MudSelectItem>
+                    <MudSelectItem T="StockOutType" Value="StockOutType.Other">Lainnya</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid?" @bind-Value="_createModel.CustomerId" Label="Pelanggan (Opsional)" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                    @foreach (var cust in _customers)
+                    {
+                        <MudSelectItem T="Guid?" Value="@((Guid?)cust.Id)">@cust.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_createModel.Recipient" Label="Penerima / Departemen" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudDatePicker @bind-Date="_createDate" Label="Tanggal Dokumen *" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd/MM/yyyy" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_createModel.Notes" Label="Catatan / Keterangan" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+        </MudGrid>
+
+        <MudDivider Class="my-4" />
+        <div class="d-flex justify-space-between align-center mb-2">
+            <MudText Typo="Typo.subtitle2" Class="font-weight-bold">Daftar Barang Keluar</MudText>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="AddCreateLine">
+                Tambah Baris
+            </MudButton>
+        </div>
+
+        @for (int i = 0; i < _createLines.Count; i++)
+        {
+            var index = i;
+            var line = _createLines[index];
+            <MudCard Elevation="1" Class="pa-3 mb-2" Style="background-color: var(--mud-palette-background-grey);">
+                <MudGrid Spacing="2" Class="align-center">
+                    <MudItem xs="12" sm="5">
+                        <MudSelect T="Guid" Value="line.ProductId" ValueChanged="@((val) => OnLineProductChanged(index, val))" Label="Barang *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (var prod in _products)
+                            {
+                                <MudSelectItem T="Guid" Value="@prod.Id">@prod.Sku - @prod.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudSelect T="Guid" Value="line.WarehouseLocationId" ValueChanged="@((val) => OnLineLocationChanged(index, val))" Label="Lokasi Rak *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (var loc in _availableLocations)
+                            {
+                                <MudSelectItem T="Guid" Value="@loc.Id">@loc.Code - @loc.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="10" sm="2">
+                        <MudNumericField T="decimal" @bind-Value="line.Quantity" Label="Qty Keluar *" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0.0001m" />
+                        <MudText Typo="Typo.caption" Color="@(GetLineAvailableStock(line) < line.Quantity ? Color.Error : Color.Secondary)">
+                            Tersedia: @GetLineAvailableStock(line).ToString("N2")
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="2" sm="1" Class="d-flex justify-end">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => RemoveCreateLine(index))" Disabled="@(_createLines.Count <= 1)" />
+                    </MudItem>
+                </MudGrid>
+            </MudCard>
+        }
+
+        <div class="d-flex justify-end gap-4 mt-2">
+            <MudText Typo="Typo.body2">Total Qty Keluar: <b>@_createLines.Sum(l => l.Quantity).ToString("N2")</b></MudText>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => _isCreateDialogOpen = false">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveCreateDraft" Disabled="_isSaving">
+            @if (_isSaving)
+            {
+                <MudProgressCircular Class="ms-n1 me-2" Size="Size.Small" Indeterminate="true" />
+                <span>Menyimpan...</span>
+            }
+            else
+            {
+                <span>Simpan Draft</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Reverse Dialog -->
+<MudDialog @bind-Visible="_isReverseDialogOpen" Options="_confirmDialogOptions">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" />
+            <MudText Typo="Typo.h6">Batalkan Dokumen Pengeluaran</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Dokumen <b>@_reversingStockOut?.IssueNumber</b> akan dibatalkan. Kuantitas barang akan dikembalikan ke stok fisik gudang.
+        </MudText>
+        <MudTextField @bind-Value="_reversalReason" Label="Alasan Pembatalan *" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="3" Placeholder="Wajib memasukkan alasan pembatalan..." />
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => _isReverseDialogOpen = false">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="ExecuteReversal" Disabled="@(string.IsNullOrWhiteSpace(_reversalReason) || _isSaving)">
+            Konfirmasi Pembatalan
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private MudTable<StockOutDto> _table = null!;
+    private string? _searchString;
+    private Guid? _selectedWarehouseId;
+    private DocumentStatus? _selectedStatus;
+    private StockOutType? _selectedType;
+
+    private List<WarehouseDto> _warehouses = new();
+    private List<ProductDto> _products = new();
+    private List<CustomerDto> _customers = new();
+    private List<WarehouseLocationDto> _availableLocations = new();
+    private Dictionary<(Guid LocationId, Guid ProductId), decimal> _stockLookup = new();
+
+    private bool _isDetailDialogOpen;
+    private bool _isCreateDialogOpen;
+    private bool _isReverseDialogOpen;
+    private bool _isSaving;
+
+    private StockOutDto? _selectedStockOut;
+    private StockOutDto? _reversingStockOut;
+    private string _reversalReason = string.Empty;
+
+    private CreateStockOutCommand _createModel = new();
+    private DateTime? _createDate = DateTime.Today;
+    private List<CreateStockOutLineDto> _createLines = new();
+
+    private readonly DialogOptions _detailDialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+    private readonly DialogOptions _formDialogOptions = new() { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true };
+    private readonly DialogOptions _confirmDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true };
+
+    private readonly List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new BreadcrumbItem("Beranda", href: "/"),
+        new BreadcrumbItem("Pergerakan Stok", href: null, disabled: true),
+        new BreadcrumbItem("Barang Keluar", href: "/stock/out", disabled: false)
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var whTask = WarehouseService.GetActiveWarehousesAsync();
+        var prodTask = ProductService.GetActiveProductsAsync();
+        var custTask = CustomerService.GetActiveCustomersAsync();
+
+        await Task.WhenAll(whTask, prodTask, custTask);
+
+        _warehouses = (await whTask).ToList();
+        _products = (await prodTask).ToList();
+        _customers = (await custTask).ToList();
+    }
+
+    private async Task<TableData<StockOutDto>> LoadServerData(TableState state, CancellationToken ct)
+    {
+        var query = new GetStockOutsQuery
+        {
+            SearchTerm = _searchString,
+            WarehouseId = _selectedWarehouseId,
+            Status = _selectedStatus,
+            IssueType = _selectedType,
+            Page = state.Page + 1,
+            PageSize = state.PageSize
+        };
+
+        var result = await StockOutService.GetStockOutsAsync(query, ct);
+        return new TableData<StockOutDto>
+        {
+            TotalItems = result.TotalCount,
+            Items = result.Items
+        };
+    }
+
+    private Task OnSearchChanged(string text)
+    {
+        _searchString = text;
+        return _table.ReloadServerData();
+    }
+
+    private Task OnWarehouseChanged(Guid? warehouseId)
+    {
+        _selectedWarehouseId = warehouseId;
+        return _table.ReloadServerData();
+    }
+
+    private Task OnStatusChanged(DocumentStatus? status)
+    {
+        _selectedStatus = status;
+        return _table.ReloadServerData();
+    }
+
+    private Task OnTypeChanged(StockOutType? type)
+    {
+        _selectedType = type;
+        return _table.ReloadServerData();
+    }
+
+    private async Task OpenDetailDialog(Guid id)
+    {
+        var result = await StockOutService.GetStockOutByIdAsync(id);
+        if (result.Succeeded && result.Data != null)
+        {
+            _selectedStockOut = result.Data;
+            _isDetailDialogOpen = true;
+        }
+        else
+        {
+            Snackbar.Add(result.ErrorMessage ?? "Gagal memuat dokumen", Severity.Error);
+        }
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        _createModel = new CreateStockOutCommand
+        {
+            WarehouseId = _warehouses.FirstOrDefault()?.Id ?? Guid.Empty,
+            IssueType = StockOutType.CustomerDelivery,
+            DocumentDate = DateTime.UtcNow
+        };
+        _createDate = DateTime.Today;
+        _createLines = new List<CreateStockOutLineDto>
+        {
+            new() { ProductId = _products.FirstOrDefault()?.Id ?? Guid.Empty, Quantity = 1m }
+        };
+
+        await LoadLocationsForWarehouse(_createModel.WarehouseId);
+        if (_availableLocations.Any())
+        {
+            _createLines[0].WarehouseLocationId = _availableLocations[0].Id;
+            await UpdateStockLookup(_createLines[0].WarehouseLocationId, _createLines[0].ProductId);
+        }
+
+        _isCreateDialogOpen = true;
+    }
+
+    private async Task OnCreateWarehouseChanged()
+    {
+        await LoadLocationsForWarehouse(_createModel.WarehouseId);
+        foreach (var l in _createLines)
+        {
+            if (_availableLocations.Any())
+            {
+                l.WarehouseLocationId = _availableLocations[0].Id;
+                await UpdateStockLookup(l.WarehouseLocationId, l.ProductId);
+            }
+        }
+    }
+
+    private async Task LoadLocationsForWarehouse(Guid warehouseId)
+    {
+        if (warehouseId == Guid.Empty)
+        {
+            _availableLocations.Clear();
+            return;
+        }
+
+        var locations = await WarehouseService.GetActiveLocationsByWarehouseAsync(warehouseId);
+        _availableLocations = locations.ToList();
+    }
+
+    private async Task OnLineProductChanged(int index, Guid productId)
+    {
+        _createLines[index].ProductId = productId;
+        await UpdateStockLookup(_createLines[index].WarehouseLocationId, productId);
+    }
+
+    private async Task OnLineLocationChanged(int index, Guid locationId)
+    {
+        _createLines[index].WarehouseLocationId = locationId;
+        await UpdateStockLookup(locationId, _createLines[index].ProductId);
+    }
+
+    private async Task UpdateStockLookup(Guid locationId, Guid productId)
+    {
+        if (locationId == Guid.Empty || productId == Guid.Empty) return;
+        var avail = await StockOutService.GetAvailableStockAsync(locationId, productId);
+        _stockLookup[(locationId, productId)] = avail;
+    }
+
+    private decimal GetLineAvailableStock(CreateStockOutLineDto line)
+    {
+        _stockLookup.TryGetValue((line.WarehouseLocationId, line.ProductId), out var avail);
+        return avail;
+    }
+
+    private async Task AddCreateLine()
+    {
+        var line = new CreateStockOutLineDto
+        {
+            ProductId = _products.FirstOrDefault()?.Id ?? Guid.Empty,
+            WarehouseLocationId = _availableLocations.FirstOrDefault()?.Id ?? Guid.Empty,
+            Quantity = 1m
+        };
+        _createLines.Add(line);
+        await UpdateStockLookup(line.WarehouseLocationId, line.ProductId);
+    }
+
+    private void RemoveCreateLine(int index)
+    {
+        if (_createLines.Count > 1)
+        {
+            _createLines.RemoveAt(index);
+        }
+    }
+
+    private async Task SaveCreateDraft()
+    {
+        if (_createDate.HasValue)
+        {
+            _createModel.DocumentDate = _createDate.Value;
+        }
+
+        _createModel.Lines = _createLines;
+
+        _isSaving = true;
+        try
+        {
+            var result = await StockOutService.CreateDraftAsync(_createModel);
+            if (result.Succeeded)
+            {
+                Snackbar.Add("Draft pengeluaran barang berhasil disimpan.", Severity.Success);
+                _isCreateDialogOpen = false;
+                await _table.ReloadServerData();
+            }
+            else
+            {
+                Snackbar.Add(result.ErrorMessage ?? "Gagal menyimpan draft.", Severity.Error);
+            }
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task ConfirmPost(StockOutDto stockOut)
+    {
+        bool? confirmed = await DialogService.ShowMessageBox(
+            "Konfirmasi Posting Pengeluaran",
+            $"Apakah Anda yakin ingin memposting dokumen pengeluaran {stockOut.IssueNumber}? Stok fisik akan dikurangi pada biaya rata-rata bergerak saat ini.",
+            yesText: "Ya, Posting Sekarang",
+            cancelText: "Batal");
+
+        if (confirmed == true)
+        {
+            var idempotencyKey = Guid.NewGuid().ToString();
+            var postResult = await StockOutService.PostAsync(stockOut.Id, idempotencyKey);
+            if (postResult.Succeeded)
+            {
+                Snackbar.Add($"Dokumen {stockOut.IssueNumber} berhasil diposting. Stok telah berkurang.", Severity.Success);
+                _isDetailDialogOpen = false;
+                await _table.ReloadServerData();
+            }
+            else
+            {
+                Snackbar.Add(postResult.ErrorMessage ?? "Gagal memposting dokumen.", Severity.Error);
+            }
+        }
+    }
+
+    private void OpenReverseDialog(StockOutDto stockOut)
+    {
+        _reversingStockOut = stockOut;
+        _reversalReason = string.Empty;
+        _isReverseDialogOpen = true;
+    }
+
+    private async Task ExecuteReversal()
+    {
+        if (_reversingStockOut == null || string.IsNullOrWhiteSpace(_reversalReason))
+            return;
+
+        _isSaving = true;
+        try
+        {
+            var idempotencyKey = Guid.NewGuid().ToString();
+            var result = await StockOutService.ReverseAsync(_reversingStockOut.Id, _reversalReason, idempotencyKey);
+            if (result.Succeeded)
+            {
+                Snackbar.Add($"Dokumen {_reversingStockOut.IssueNumber} berhasil dibatalkan (Reversed).", Severity.Success);
+                _isReverseDialogOpen = false;
+                _isDetailDialogOpen = false;
+                await _table.ReloadServerData();
+            }
+            else
+            {
+                Snackbar.Add(result.ErrorMessage ?? "Gagal membatalkan dokumen.", Severity.Error);
+            }
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task DeleteDraft(StockOutDto stockOut)
+    {
+        bool? confirmed = await DialogService.ShowMessageBox(
+            "Hapus Draft",
+            $"Apakah Anda yakin ingin menghapus draft dokumen {stockOut.IssueNumber}?",
+            yesText: "Hapus",
+            cancelText: "Batal");
+
+        if (confirmed == true)
+        {
+            var result = await StockOutService.DeleteDraftAsync(stockOut.Id);
+            if (result.Succeeded)
+            {
+                Snackbar.Add("Draft berhasil dihapus.", Severity.Success);
+                await _table.ReloadServerData();
+            }
+            else
+            {
+                Snackbar.Add(result.ErrorMessage ?? "Gagal menghapus draft.", Severity.Error);
+            }
+        }
+    }
+}

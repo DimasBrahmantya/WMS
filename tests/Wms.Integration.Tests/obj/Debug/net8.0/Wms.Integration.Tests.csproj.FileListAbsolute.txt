@@ -167,3 +167,4 @@ D:\Dimas\Project Mini\WMS\tests\Wms.Integration.Tests\bin\Debug\net8.0\Microsoft
 D:\Dimas\Project Mini\WMS\tests\Wms.Integration.Tests\bin\Debug\net8.0\Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore.dll
 D:\Dimas\Project Mini\WMS\tests\Wms.Integration.Tests\bin\Debug\net8.0\Microsoft.Extensions.Hosting.Abstractions.dll
 D:\Dimas\Project Mini\WMS\tests\Wms.Integration.Tests\bin\Debug\net8.0\Microsoft.EntityFrameworkCore.InMemory.dll
+D:\Dimas\Project Mini\WMS\tests\Wms.Integration.Tests\obj\Debug\net8.0\Wms.Integration.Tests.sourcelink.json

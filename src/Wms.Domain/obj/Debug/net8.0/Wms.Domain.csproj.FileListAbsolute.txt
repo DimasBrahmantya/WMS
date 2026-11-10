@@ -10,3 +10,4 @@ D:\Dimas\Project Mini\WMS\src\Wms.Domain\obj\Debug\net8.0\refint\Wms.Domain.dll
 D:\Dimas\Project Mini\WMS\src\Wms.Domain\obj\Debug\net8.0\Wms.Domain.pdb
 D:\Dimas\Project Mini\WMS\src\Wms.Domain\obj\Debug\net8.0\ref\Wms.Domain.dll
 D:\Dimas\Project Mini\WMS\src\Wms.Domain\obj\Debug\net8.0\Wms.Domain.csproj.AssemblyReference.cache
+D:\Dimas\Project Mini\WMS\src\Wms.Domain\obj\Debug\net8.0\Wms.Domain.sourcelink.json

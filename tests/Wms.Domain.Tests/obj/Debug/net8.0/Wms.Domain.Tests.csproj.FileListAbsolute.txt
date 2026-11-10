@@ -115,3 +115,4 @@ D:\Dimas\Project Mini\WMS\tests\Wms.Domain.Tests\bin\Debug\net8.0\Microsoft.Exte
 D:\Dimas\Project Mini\WMS\tests\Wms.Domain.Tests\bin\Debug\net8.0\Microsoft.Extensions.Logging.Abstractions.dll
 D:\Dimas\Project Mini\WMS\tests\Wms.Domain.Tests\bin\Debug\net8.0\Microsoft.Extensions.Options.dll
 D:\Dimas\Project Mini\WMS\tests\Wms.Domain.Tests\bin\Debug\net8.0\Microsoft.Extensions.Primitives.dll
+D:\Dimas\Project Mini\WMS\tests\Wms.Domain.Tests\obj\Debug\net8.0\Wms.Domain.Tests.sourcelink.json

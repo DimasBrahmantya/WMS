@@ -69,6 +69,14 @@ build_metadata.AdditionalFiles.CssScope =
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xNYXN0ZXJcV2FyZWhvdXNlcy5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Stock/GoodsReceipts.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xTdG9ja1xHb29kc1JlY2VpcHRzLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Pages/Stock/StockOuts.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xTdG9ja1xTdG9ja091dHMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
 [D:/Dimas/Project Mini/WMS/src/Wms.Web/Components/Routes.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xSb3V0ZXMucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 

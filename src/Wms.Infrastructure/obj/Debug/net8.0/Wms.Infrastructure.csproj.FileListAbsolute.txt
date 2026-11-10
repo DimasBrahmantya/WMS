@@ -17,3 +17,4 @@ D:\Dimas\Project Mini\WMS\src\Wms.Infrastructure\obj\Debug\net8.0\refint\Wms.Inf
 D:\Dimas\Project Mini\WMS\src\Wms.Infrastructure\obj\Debug\net8.0\Wms.Infrastructure.pdb
 D:\Dimas\Project Mini\WMS\src\Wms.Infrastructure\obj\Debug\net8.0\Wms.Infrastructure.genruntimeconfig.cache
 D:\Dimas\Project Mini\WMS\src\Wms.Infrastructure\obj\Debug\net8.0\ref\Wms.Infrastructure.dll
+D:\Dimas\Project Mini\WMS\src\Wms.Infrastructure\obj\Debug\net8.0\Wms.Infrastructure.sourcelink.json

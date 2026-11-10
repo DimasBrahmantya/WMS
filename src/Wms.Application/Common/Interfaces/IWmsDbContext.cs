@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Wms.Domain.Entities.Identity;
+using Wms.Domain.Entities.Inventory;
 using Wms.Domain.Entities.Master;
 using Wms.Domain.Entities.System;
+using Wms.Domain.Entities.Transactions;
 
 namespace Wms.Application.Common.Interfaces;
 
@@ -15,6 +19,10 @@ public interface IWmsDbContext
     DbSet<AuditLog> AuditLogs { get; }
     DbSet<AppSetting> AppSettings { get; }
 
+    // System / Sequence / Idempotency
+    DbSet<DocumentSequence> DocumentSequences { get; }
+    DbSet<IdempotencyKey> IdempotencyKeys { get; }
+
     // Master Data
     DbSet<Warehouse> Warehouses { get; }
     DbSet<WarehouseLocation> WarehouseLocations { get; }
@@ -24,5 +32,19 @@ public interface IWmsDbContext
     DbSet<Supplier> Suppliers { get; }
     DbSet<Customer> Customers { get; }
 
+    // Persediaan & Ledger (Append-only)
+    DbSet<InventoryBalance> InventoryBalances { get; }
+    DbSet<InventoryValuation> InventoryValuations { get; }
+    DbSet<StockMovement> StockMovements { get; }
+
+    // Transaksi Stok (Fase 1)
+    DbSet<GoodsReceipt> GoodsReceipts { get; }
+    DbSet<GoodsReceiptLine> GoodsReceiptLines { get; }
+    DbSet<StockOut> StockOuts { get; }
+    DbSet<StockOutLine> StockOutLines { get; }
+
+    DatabaseFacade Database { get; }
+
+    Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

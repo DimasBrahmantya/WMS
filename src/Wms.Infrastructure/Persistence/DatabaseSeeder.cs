@@ -35,6 +35,7 @@ public class DatabaseSeeder
             await SeedUsersAsync();
             await SeedSettingsAsync();
             await SeedMasterDataAsync();
+            await SeedStockTransactionsAsync();
         }
         catch (Exception ex)
         {
@@ -486,6 +487,128 @@ public class DatabaseSeeder
                     WarehouseId = warehouseSby.Id
                 });
             }
+        }
+
+        await _context.SaveChangesAsync();
+    }
+
+    private async Task SeedStockTransactionsAsync()
+    {
+        if (await _context.GoodsReceipts.AnyAsync())
+        {
+            return;
+        }
+
+        var warehouse = await _context.Warehouses.Include(w => w.Locations).FirstOrDefaultAsync(w => w.Code == "WH-JKT-01");
+        var supplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Code == "SUP-001");
+        var adminUser = await _userManager.FindByNameAsync("admin");
+        var productMouse = await _context.Products.FirstOrDefaultAsync(p => p.Sku == "ELK-001");
+        var productKertas = await _context.Products.FirstOrDefaultAsync(p => p.Sku == "ATK-001");
+
+        if (warehouse == null || adminUser == null || productMouse == null || warehouse.Locations.Count == 0)
+        {
+            return;
+        }
+
+        var location1 = warehouse.Locations.First();
+        var now = DateTime.UtcNow;
+
+        // 1. Penerimaan Awal (Goods Receipt)
+        var receipt = new Domain.Entities.Transactions.GoodsReceipt
+        {
+            Id = Guid.NewGuid(),
+            ReceiptNumber = "GR-202611-000001",
+            WarehouseId = warehouse.Id,
+            SupplierId = supplier?.Id,
+            PurchaseOrderNumber = "PO-202611-0001",
+            Notes = "Penerimaan stok awal sistem (Seeding demo)",
+            Status = Domain.Enums.DocumentStatus.Posted,
+            CreatedByUserId = adminUser.Id,
+            PostedByUserId = adminUser.Id,
+            PostedAtUtc = now,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+            Lines = new List<Domain.Entities.Transactions.GoodsReceiptLine>
+            {
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    ProductId = productMouse.Id,
+                    WarehouseLocationId = location1.Id,
+                    Quantity = 50m,
+                    UnitCost = 150000m,
+                    TotalCost = 7500000m
+                }
+            }
+        };
+
+        if (productKertas != null && warehouse.Locations.Count > 1)
+        {
+            var location2 = warehouse.Locations.Skip(1).First();
+            receipt.Lines.Add(new Domain.Entities.Transactions.GoodsReceiptLine
+            {
+                Id = Guid.NewGuid(),
+                ProductId = productKertas.Id,
+                WarehouseLocationId = location2.Id,
+                Quantity = 100m,
+                UnitCost = 45000m,
+                TotalCost = 4500000m
+            });
+        }
+
+        _context.GoodsReceipts.Add(receipt);
+
+        // 2. Balances, Valuations & Stock Movements
+        foreach (var line in receipt.Lines)
+        {
+            _context.InventoryBalances.Add(new Domain.Entities.Inventory.InventoryBalance
+            {
+                Id = Guid.NewGuid(),
+                ProductId = line.ProductId,
+                WarehouseId = warehouse.Id,
+                WarehouseLocationId = line.WarehouseLocationId,
+                Status = Domain.Enums.StockStatus.Available,
+                OnHand = line.Quantity,
+                Reserved = 0m,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            });
+
+            _context.InventoryValuations.Add(new Domain.Entities.Inventory.InventoryValuation
+            {
+                Id = Guid.NewGuid(),
+                ProductId = line.ProductId,
+                WarehouseId = warehouse.Id,
+                OnHandQty = line.Quantity,
+                OnHandValue = line.TotalCost,
+                AvgCost = line.UnitCost,
+                LastCost = line.UnitCost,
+                UpdatedAtUtc = now
+            });
+
+            _context.StockMovements.Add(new Domain.Entities.Inventory.StockMovement
+            {
+                Id = Guid.NewGuid(),
+                MovementNumber = $"MV-202611-{_context.StockMovements.Count() + 1:D6}",
+                MovementType = Domain.Enums.MovementType.GoodsReceipt,
+                ProductId = line.ProductId,
+                WarehouseId = warehouse.Id,
+                WarehouseLocationId = line.WarehouseLocationId,
+                StockStatus = Domain.Enums.StockStatus.Available,
+                Quantity = line.Quantity,
+                Direction = Domain.Enums.MovementDirection.In,
+                BalanceBefore = 0m,
+                BalanceAfter = line.Quantity,
+                UnitCost = line.UnitCost,
+                TotalValue = line.TotalCost,
+                SourceDocumentType = Domain.Enums.SourceDocumentType.GoodsReceipt,
+                SourceDocumentId = receipt.Id,
+                SourceDocumentNumber = receipt.ReceiptNumber,
+                Reason = "Penerimaan stok awal",
+                UserId = adminUser.Id,
+                TimestampUtc = now,
+                Status = Domain.Enums.MovementStatus.Posted
+            });
         }
 
         await _context.SaveChangesAsync();

@@ -65,6 +65,14 @@ public static class DependencyInjection
         services.AddScoped<IFileStorage, LocalFileStorage>();
         services.AddScoped<DatabaseSeeder>();
 
+        // Stock, Ledger, Valuation & Transaction Services (Tahap 3)
+        services.AddScoped<Wms.Application.Features.Stock.DocumentNumbering.IDocumentSequenceService, Services.Stock.DocumentSequenceService>();
+        services.AddScoped<Wms.Application.Features.Stock.Idempotency.IIdempotencyService, Services.Stock.IdempotencyService>();
+        services.AddScoped<Wms.Application.Features.Stock.Postings.IStockPostingService, Services.Stock.StockPostingService>();
+        services.AddScoped<Wms.Application.Features.Stock.GoodsReceipts.IGoodsReceiptService, Services.Stock.GoodsReceiptService>();
+        services.AddScoped<Wms.Application.Features.Stock.StockOuts.IStockOutService, Services.Stock.StockOutService>();
+        services.AddScoped<Wms.Application.Features.Stock.Reconciliation.IStockReconciliationService, Services.Stock.StockReconciliationService>();
+
         return services;
     }
 }

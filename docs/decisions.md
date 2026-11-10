@@ -86,3 +86,58 @@ Dokumen ini mencatat keputusan arsitektur, teknis, dan verifikasi fondasi yang d
   - Sebelum menghapus data master (Kategori, Satuan, Gudang, Lokasi, Barang, Pengguna, Peran), service melakukan pemeriksaan referensi bisnis (`AnyAsync` pada entitas terkait/riwayat).
   - Jika data masih direferensikan, penghapusan permanen ditolak dengan pesan kesalahan bisnis yang jelas (misalnya: *"Kategori tidak dapat dihapus permanen karena masih digunakan oleh produk. Silakan nonaktifkan status kategori ini."*).
   - Foreign key constraint di PostgreSQL menggunakan `ON DELETE RESTRICT` sebagai perlindungan lapis database tambahan.
+
+---
+
+## Keputusan 7: Valuasi Persediaan Rata-Rata Bergerak (Moving Average) Sesuai Bagian 9.3
+
+- **Status**: Diputuskan & Diimplementasikan (Tahap 3)
+- **Konteks**:
+  - Bagian 9.3 spesifikasi WMS: Biaya rata-rata bergerak dihitung per barang per gudang (bukan per batch), disimpan di tabel `inventory_valuations` (`on_hand_qty`, `on_hand_value`, `avg_cost`, `last_cost`).
+  - Aturan:
+    - Masuk: `avg_cost_baru = (on_hand_value + qty_masuk * biaya_satuan) / (on_hand_qty + qty_masuk)`.
+    - Keluar: dinilai pada `avg_cost` saat posting; `avg_cost` tidak berubah.
+    - Nol stok: saat `on_hand_qty` mencapai 0, `on_hand_value` dijamin tepat 0 (selisih pembulatan dinolkan).
+    - Reversal masuk: mengurangi saldo dan menghitung ulang `avg_cost`, menolak jika stok menjadi negatif.
+    - Reversal keluar: mengembalikan stok pada unit cost saat keluar dan menghitung ulang `avg_cost`.
+    - Presisi: `numeric(18,4)`, pembulatan `MidpointRounding.AwayFromZero`.
+- **Keputusan**:
+  - Logika diisolasi dalam `StockPostingService` di bawah transaksi database atomik.
+  - Setiap perhitungan divalidasi dengan unit test menyeluruh untuk memastikan kepatuhan formula matematika.
+
+---
+
+## Keputusan 8: Append-Only Stock Movements Ledger dan Penguncian Deterministik
+
+- **Status**: Diputuskan & Diimplementasikan (Tahap 3)
+- **Konteks**:
+  - Bagian 9.2, 9.4, dan 28: Tabel `stock_movements` bersifat *append-only*. Perubahan status dan pembatalan hanya mencatat movement lawan bertaut (`reversed_by_movement_id`).
+  - Dokumen multi-baris berisiko memicu deadlock pada transaksi konkuren jika urutan lock tidak beraturan.
+- **Keputusan**:
+  - Perlindungan ganda append-only:
+    1. Di ORM (`WmsDbContext.SaveChangesAsync`): melempar `InvalidOperationException` jika terdeteksi `EntityState.Deleted` atau modifikasi kolom finansial/kuantitas pada `StockMovement`.
+    2. Di database: Foreign key bertaut dan check constraint `quantity > 0`.
+  - Pencegahan deadlock: Baris barang dalam dokumen selalu diurutkan secara deterministik (`OrderBy(ProductId).ThenBy(WarehouseLocationId)`) sebelum row-locking / eksekusi mutasi.
+
+---
+
+## Keputusan 9: Idempotency Key dan Document Sequences
+
+- **Status**: Diputuskan & Diimplementasikan (Tahap 3)
+- **Konteks**:
+  - Jaringan atau double click pada tombol posting dapat menyebabkan double submission.
+  - Penomoran dokumen harus unik dan sequential per periode `{PREFIX}-{YYYYMM}-{NNNNNN}`.
+- **Keputusan**:
+  - `IdempotencyService` menyimpan payload hasil eksekusi di tabel `idempotency_keys` dengan unique index `(user_id, operation, key)`. Pemanggilan ulang dengan key yang sama mengembalikan respon tersimpan tanpa menggandakan movement.
+  - `DocumentSequenceService` mengelola counter nomor di tabel `document_sequences` per prefix dan periode (YYYYMM) dalam transaksi dengan penguncian aman.
+
+---
+
+## Keputusan 10: Mekanisme Rekonsiliasi Saldo vs Ledger
+
+- **Status**: Diputuskan & Diimplementasikan (Tahap 3)
+- **Konteks**:
+  - Menjamin integritas konsistensi saldo fisik (`inventory_balances`) terhadap akumulasi kronologis pergerakan (`stock_movements`).
+- **Keputusan**:
+  - Layanan `StockReconciliationService` membandingkan `balance.OnHand` dengan `SUM(CASE WHEN In THEN Qty ELSE -Qty END)` untuk seluruh kombinasi barang, gudang, lokasi, dan status stok.
+  - Menghasilkan laporan ketidakkonsistenan secara otomatis untuk kebutuhan audit dan health monitoring persediaan.

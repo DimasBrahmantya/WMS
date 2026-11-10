@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Wms.Application.Common.Models;
 
 public class Result
@@ -6,7 +8,8 @@ public class Result
     public string? ErrorMessage { get; protected set; }
     public IReadOnlyList<string> Errors { get; protected set; } = Array.Empty<string>();
 
-    protected Result(bool succeeded, string? errorMessage, IEnumerable<string>? errors = null)
+    [JsonConstructor]
+    public Result(bool succeeded, string? errorMessage, IReadOnlyList<string>? errors = null)
     {
         Succeeded = succeeded;
         ErrorMessage = errorMessage;
@@ -31,7 +34,8 @@ public class Result<T> : Result
 {
     public T? Data { get; private set; }
 
-    private Result(bool succeeded, T? data, string? errorMessage, IEnumerable<string>? errors = null)
+    [JsonConstructor]
+    public Result(bool succeeded, T? data, string? errorMessage, IReadOnlyList<string>? errors = null)
         : base(succeeded, errorMessage, errors)
     {
         Data = data;

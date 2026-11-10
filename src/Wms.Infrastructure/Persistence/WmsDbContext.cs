@@ -1,11 +1,14 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Wms.Application.Common.Interfaces;
 using Wms.Domain.Common;
 using Wms.Domain.Entities.Identity;
+using Wms.Domain.Entities.Inventory;
 using Wms.Domain.Entities.Master;
 using Wms.Domain.Entities.System;
+using Wms.Domain.Entities.Transactions;
 
 namespace Wms.Infrastructure.Persistence;
 
@@ -41,6 +44,10 @@ public class WmsDbContext : IdentityDbContext<
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
 
+    // System / Sequence / Idempotency
+    public DbSet<DocumentSequence> DocumentSequences => Set<DocumentSequence>();
+    public DbSet<IdempotencyKey> IdempotencyKeys => Set<IdempotencyKey>();
+
     // Master Data
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
     public DbSet<WarehouseLocation> WarehouseLocations => Set<WarehouseLocation>();
@@ -49,6 +56,67 @@ public class WmsDbContext : IdentityDbContext<
     public DbSet<Product> Products => Set<Product>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<Customer> Customers => Set<Customer>();
+
+    // Persediaan & Ledger (Append-only)
+    public DbSet<InventoryBalance> InventoryBalances => Set<InventoryBalance>();
+    public DbSet<InventoryValuation> InventoryValuations => Set<InventoryValuation>();
+    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+
+    // Transaksi Stok (Fase 1)
+    public DbSet<GoodsReceipt> GoodsReceipts => Set<GoodsReceipt>();
+    public DbSet<GoodsReceiptLine> GoodsReceiptLines => Set<GoodsReceiptLine>();
+    public DbSet<StockOut> StockOuts => Set<StockOut>();
+    public DbSet<StockOutLine> StockOutLines => Set<StockOutLine>();
+
+    public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+    {
+        if (Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
+        {
+            return Task.FromResult<IDbContextTransaction>(new NullDbContextTransaction());
+        }
+        return Database.BeginTransactionAsync(cancellationToken);
+    }
+
+    private class NullDbContextTransaction : IDbContextTransaction
+    {
+        public Guid TransactionId { get; } = Guid.NewGuid();
+        public void Commit() { }
+        public Task CommitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void Rollback() { }
+        public Task RollbackAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void Dispose() { }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        // Enforce append-only ledger in ORM layer
+        foreach (var entry in ChangeTracker.Entries<StockMovement>())
+        {
+            if (entry.State == EntityState.Deleted)
+            {
+                throw new InvalidOperationException("StockMovements bersifat append-only dan tidak boleh dihapus.");
+            }
+
+            if (entry.State == EntityState.Modified)
+            {
+                var modifiedProps = entry.Properties.Where(p => p.IsModified).Select(p => p.Metadata.Name).ToList();
+                var allowedMods = new[]
+                {
+                    nameof(StockMovement.ReversedByMovementId),
+                    nameof(StockMovement.ReversedAtUtc),
+                    nameof(StockMovement.Status)
+                };
+
+                if (modifiedProps.Any(p => !allowedMods.Contains(p)))
+                {
+                    throw new InvalidOperationException("Kolom nilai transaksi pada StockMovements tidak dapat diubah (append-only ledger).");
+                }
+            }
+        }
+
+        return base.SaveChangesAsync(cancellationToken);
+    }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -226,8 +294,8 @@ public class WmsDbContext : IdentityDbContext<
             entity.Property(p => p.Name).HasMaxLength(200).IsRequired();
             entity.Property(p => p.Description).HasMaxLength(1000);
             entity.Property(p => p.Brand).HasMaxLength(100);
-            entity.Property(p => p.MinStock).HasColumnType("numeric(18,4)").HasDefaultValue(0);
-            entity.Property(p => p.MaxStock).HasColumnType("numeric(18,4)");
+            entity.Property(p => p.MinStock).HasPrecision(18, 4).HasDefaultValue(0);
+            entity.Property(p => p.MaxStock).HasPrecision(18, 4);
             entity.Property(p => p.TrackingMethod).HasConversion<int>().IsRequired();
             entity.Property(p => p.IsActive).HasDefaultValue(true);
             entity.Property(p => p.CreatedAtUtc).HasColumnType("timestamp with time zone");
@@ -278,6 +346,319 @@ public class WmsDbContext : IdentityDbContext<
             entity.Property(c => c.IsActive).HasDefaultValue(true);
             entity.Property(c => c.CreatedAtUtc).HasColumnType("timestamp with time zone");
             entity.Property(c => c.UpdatedAtUtc).HasColumnType("timestamp with time zone");
+        });
+
+        // System / Sequences / Idempotency
+        builder.Entity<DocumentSequence>(entity =>
+        {
+            entity.ToTable("document_sequences");
+            entity.HasKey(s => s.Id);
+            entity.Property(s => s.Prefix).HasMaxLength(10).IsRequired();
+            entity.Property(s => s.Period).HasMaxLength(6).IsRequired();
+            entity.HasIndex(s => new { s.Prefix, s.Period }).IsUnique();
+            entity.Property(s => s.UpdatedAtUtc).HasColumnType("timestamp with time zone");
+        });
+
+        builder.Entity<IdempotencyKey>(entity =>
+        {
+            entity.ToTable("idempotency_keys");
+            entity.HasKey(k => k.Id);
+            entity.Property(k => k.Operation).HasMaxLength(100).IsRequired();
+            entity.Property(k => k.Key).HasMaxLength(100).IsRequired();
+            entity.HasIndex(k => new { k.UserId, k.Operation, k.Key }).IsUnique();
+            entity.Property(k => k.CreatedAtUtc).HasColumnType("timestamp with time zone");
+
+            entity.HasOne(k => k.User)
+                .WithMany()
+                .HasForeignKey(k => k.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Persediaan: Balances & Valuations
+        builder.Entity<InventoryBalance>(entity =>
+        {
+            entity.ToTable("inventory_balances", t =>
+            {
+                t.HasCheckConstraint("CK_inventory_balances_on_hand", "\"on_hand\" >= 0");
+                t.HasCheckConstraint("CK_inventory_balances_reserved", "\"reserved\" >= 0 AND \"reserved\" <= \"on_hand\"");
+            });
+
+            entity.HasKey(b => b.Id);
+            entity.Property(b => b.BatchNumber).HasMaxLength(100);
+            entity.Property(b => b.Status).HasConversion<int>().IsRequired();
+            entity.Property(b => b.OnHand).HasPrecision(18, 4);
+            entity.Property(b => b.Reserved).HasPrecision(18, 4).HasDefaultValue(0);
+            entity.Property(b => b.CreatedAtUtc).HasColumnType("timestamp with time zone");
+            entity.Property(b => b.UpdatedAtUtc).HasColumnType("timestamp with time zone");
+
+            entity.HasIndex(b => new { b.ProductId, b.WarehouseId, b.WarehouseLocationId, b.Status, b.BatchNumber }).IsUnique();
+
+            entity.HasOne(b => b.Product)
+                .WithMany()
+                .HasForeignKey(b => b.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(b => b.Warehouse)
+                .WithMany()
+                .HasForeignKey(b => b.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(b => b.WarehouseLocation)
+                .WithMany()
+                .HasForeignKey(b => b.WarehouseLocationId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasQueryFilter(b => !IsUserRestrictedToWarehouses || UserAllowedWarehouseIds.Contains(b.WarehouseId));
+        });
+
+        builder.Entity<InventoryValuation>(entity =>
+        {
+            entity.ToTable("inventory_valuations");
+            entity.HasKey(v => v.Id);
+            entity.Property(v => v.OnHandQty).HasPrecision(18, 4);
+            entity.Property(v => v.OnHandValue).HasPrecision(18, 4);
+            entity.Property(v => v.AvgCost).HasPrecision(18, 4);
+            entity.Property(v => v.LastCost).HasPrecision(18, 4);
+            entity.Property(v => v.UpdatedAtUtc).HasColumnType("timestamp with time zone");
+
+            entity.HasIndex(v => new { v.ProductId, v.WarehouseId }).IsUnique();
+
+            entity.HasOne(v => v.Product)
+                .WithMany()
+                .HasForeignKey(v => v.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(v => v.Warehouse)
+                .WithMany()
+                .HasForeignKey(v => v.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasQueryFilter(v => !IsUserRestrictedToWarehouses || UserAllowedWarehouseIds.Contains(v.WarehouseId));
+        });
+
+        // Persediaan: Append-Only Stock Movements Ledger
+        builder.Entity<StockMovement>(entity =>
+        {
+            entity.ToTable("stock_movements", t =>
+            {
+                t.HasCheckConstraint("CK_stock_movements_quantity", "\"quantity\" > 0");
+            });
+
+            entity.HasKey(m => m.Id);
+            entity.Property(m => m.MovementNumber).HasMaxLength(50).IsRequired();
+            entity.HasIndex(m => m.MovementNumber).IsUnique();
+
+            entity.Property(m => m.MovementType).HasConversion<int>().IsRequired();
+            entity.Property(m => m.StockStatus).HasConversion<int>().IsRequired();
+            entity.Property(m => m.Direction).HasConversion<int>().IsRequired();
+            entity.Property(m => m.Status).HasConversion<int>().IsRequired();
+            entity.Property(m => m.SourceDocumentType).HasConversion<int>().IsRequired();
+
+            entity.Property(m => m.BatchNumber).HasMaxLength(100);
+            entity.Property(m => m.Quantity).HasPrecision(18, 4);
+            entity.Property(m => m.BalanceBefore).HasPrecision(18, 4);
+            entity.Property(m => m.BalanceAfter).HasPrecision(18, 4);
+            entity.Property(m => m.UnitCost).HasPrecision(18, 4);
+            entity.Property(m => m.TotalValue).HasPrecision(18, 4);
+
+            entity.Property(m => m.SourceDocumentNumber).HasMaxLength(50).IsRequired();
+            entity.Property(m => m.Reason).HasMaxLength(500);
+            entity.Property(m => m.TimestampUtc).HasColumnType("timestamp with time zone");
+            entity.Property(m => m.ReversedAtUtc).HasColumnType("timestamp with time zone");
+
+            entity.HasIndex(m => new { m.ProductId, m.WarehouseId, m.TimestampUtc });
+            entity.HasIndex(m => new { m.SourceDocumentType, m.SourceDocumentId });
+            entity.HasIndex(m => m.Status);
+
+            entity.HasOne(m => m.Product)
+                .WithMany()
+                .HasForeignKey(m => m.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(m => m.Warehouse)
+                .WithMany()
+                .HasForeignKey(m => m.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(m => m.WarehouseLocation)
+                .WithMany()
+                .HasForeignKey(m => m.WarehouseLocationId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(m => m.User)
+                .WithMany()
+                .HasForeignKey(m => m.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(m => m.ReversedByMovement)
+                .WithMany()
+                .HasForeignKey(m => m.ReversedByMovementId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasQueryFilter(m => !IsUserRestrictedToWarehouses || UserAllowedWarehouseIds.Contains(m.WarehouseId));
+        });
+
+        // Transaksi Stok: Goods Receipts (Penerimaan / Masuk)
+        builder.Entity<GoodsReceipt>(entity =>
+        {
+            entity.ToTable("goods_receipts");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.ReceiptNumber).HasMaxLength(50).IsRequired();
+            entity.HasIndex(r => r.ReceiptNumber).IsUnique();
+
+            entity.Property(r => r.DocumentDate).HasColumnType("timestamp with time zone");
+            entity.Property(r => r.PurchaseOrderNumber).HasMaxLength(100);
+            entity.Property(r => r.Notes).HasMaxLength(1000);
+            entity.Property(r => r.Status).HasConversion<int>().IsRequired();
+            entity.Property(r => r.ReversalReason).HasMaxLength(500);
+            entity.Property(r => r.ConcurrencyToken).HasMaxLength(40).IsConcurrencyToken();
+
+            entity.Property(r => r.CreatedAtUtc).HasColumnType("timestamp with time zone");
+            entity.Property(r => r.UpdatedAtUtc).HasColumnType("timestamp with time zone");
+            entity.Property(r => r.PostedAtUtc).HasColumnType("timestamp with time zone");
+            entity.Property(r => r.ReversedAtUtc).HasColumnType("timestamp with time zone");
+
+            entity.HasIndex(r => new { r.WarehouseId, r.DocumentDate, r.Status });
+
+            entity.HasOne(r => r.Warehouse)
+                .WithMany()
+                .HasForeignKey(r => r.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.Supplier)
+                .WithMany()
+                .HasForeignKey(r => r.SupplierId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(r => r.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.PostedByUser)
+                .WithMany()
+                .HasForeignKey(r => r.PostedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.ReversedByUser)
+                .WithMany()
+                .HasForeignKey(r => r.ReversedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(r => r.Lines)
+                .WithOne(l => l.GoodsReceipt)
+                .HasForeignKey(l => l.GoodsReceiptId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(r => !IsUserRestrictedToWarehouses || UserAllowedWarehouseIds.Contains(r.WarehouseId));
+        });
+
+        builder.Entity<GoodsReceiptLine>(entity =>
+        {
+            entity.ToTable("goods_receipt_lines", t =>
+            {
+                t.HasCheckConstraint("CK_goods_receipt_lines_quantity", "\"quantity\" > 0");
+                t.HasCheckConstraint("CK_goods_receipt_lines_unit_cost", "\"unit_cost\" >= 0");
+            });
+
+            entity.HasKey(l => l.Id);
+            entity.Property(l => l.Quantity).HasPrecision(18, 4);
+            entity.Property(l => l.UnitCost).HasPrecision(18, 4);
+            entity.Property(l => l.TotalCost).HasPrecision(18, 4);
+            entity.Property(l => l.BatchNumber).HasMaxLength(100);
+            entity.Property(l => l.ExpiryDate).HasColumnType("timestamp with time zone");
+            entity.Property(l => l.Notes).HasMaxLength(500);
+
+            entity.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(l => l.WarehouseLocation)
+                .WithMany()
+                .HasForeignKey(l => l.WarehouseLocationId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // Transaksi Stok: Stock Outs (Pengeluaran / Keluar)
+        builder.Entity<StockOut>(entity =>
+        {
+            entity.ToTable("stock_outs");
+            entity.HasKey(s => s.Id);
+            entity.Property(s => s.IssueNumber).HasMaxLength(50).IsRequired();
+            entity.HasIndex(s => s.IssueNumber).IsUnique();
+
+            entity.Property(s => s.DocumentDate).HasColumnType("timestamp with time zone");
+            entity.Property(s => s.Recipient).HasMaxLength(200);
+            entity.Property(s => s.IssueType).HasConversion<int>().IsRequired();
+            entity.Property(s => s.Notes).HasMaxLength(1000);
+            entity.Property(s => s.Status).HasConversion<int>().IsRequired();
+            entity.Property(s => s.ReversalReason).HasMaxLength(500);
+            entity.Property(s => s.ConcurrencyToken).HasMaxLength(40).IsConcurrencyToken();
+
+            entity.Property(s => s.CreatedAtUtc).HasColumnType("timestamp with time zone");
+            entity.Property(s => s.UpdatedAtUtc).HasColumnType("timestamp with time zone");
+            entity.Property(s => s.PostedAtUtc).HasColumnType("timestamp with time zone");
+            entity.Property(s => s.ReversedAtUtc).HasColumnType("timestamp with time zone");
+
+            entity.HasIndex(s => new { s.WarehouseId, s.DocumentDate, s.Status });
+
+            entity.HasOne(s => s.Warehouse)
+                .WithMany()
+                .HasForeignKey(s => s.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.Customer)
+                .WithMany()
+                .HasForeignKey(s => s.CustomerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(s => s.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.PostedByUser)
+                .WithMany()
+                .HasForeignKey(s => s.PostedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(s => s.ReversedByUser)
+                .WithMany()
+                .HasForeignKey(s => s.ReversedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(s => s.Lines)
+                .WithOne(l => l.StockOut)
+                .HasForeignKey(l => l.StockOutId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(s => !IsUserRestrictedToWarehouses || UserAllowedWarehouseIds.Contains(s.WarehouseId));
+        });
+
+        builder.Entity<StockOutLine>(entity =>
+        {
+            entity.ToTable("stock_out_lines", t =>
+            {
+                t.HasCheckConstraint("CK_stock_out_lines_quantity", "\"quantity\" > 0");
+            });
+
+            entity.HasKey(l => l.Id);
+            entity.Property(l => l.Quantity).HasPrecision(18, 4);
+            entity.Property(l => l.UnitCost).HasPrecision(18, 4);
+            entity.Property(l => l.TotalCost).HasPrecision(18, 4);
+            entity.Property(l => l.BatchNumber).HasMaxLength(100);
+            entity.Property(l => l.Notes).HasMaxLength(500);
+
+            entity.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(l => l.WarehouseLocation)
+                .WithMany()
+                .HasForeignKey(l => l.WarehouseLocationId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

@@ -144,3 +144,4 @@ D:\Dimas\Project Mini\WMS\src\Wms.Web\bin\Debug\net8.0\Microsoft.Extensions.Diag
 D:\Dimas\Project Mini\WMS\src\Wms.Web\bin\Debug\net8.0\Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions.dll
 D:\Dimas\Project Mini\WMS\src\Wms.Web\bin\Debug\net8.0\Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore.dll
 D:\Dimas\Project Mini\WMS\src\Wms.Web\bin\Debug\net8.0\Microsoft.Extensions.Hosting.Abstractions.dll
+D:\Dimas\Project Mini\WMS\src\Wms.Web\obj\Debug\net8.0\Wms.Web.sourcelink.json
