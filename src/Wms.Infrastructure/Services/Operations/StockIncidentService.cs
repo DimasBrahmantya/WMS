@@ -504,3 +504,4 @@ public class StockIncidentService : IStockIncidentService
         };
     }
 }
+

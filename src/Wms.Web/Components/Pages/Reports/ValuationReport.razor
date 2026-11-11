@@ -5,6 +5,7 @@
 @inject ICategoryService CategoryService
 @inject ISnackbar Snackbar
 @inject IClock Clock
+@inject IDialogService DialogService
 
 <PageTitle>Laporan Nilai Persediaan - Warehouse Management System</PageTitle>
 
@@ -29,6 +30,10 @@
         <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Assessment"
                    Href="/reports/stock">
             Lihat Stok Fisik
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.FileDownload"
+                   OnClick="OpenExportDialog">
+            Ekspor Valuasi
         </MudButton>
     </div>
 </div>
@@ -293,5 +298,52 @@
     {
         _query.CategoryId = categoryId;
         await LoadDataAsync();
+    }
+
+    private async Task OpenExportDialog()
+    {
+        var parameters = new DialogParameters<Dialogs.ExportDialog>
+        {
+            { x => x.ReportType, "ValuationReport" },
+            { x => x.ReportTitle, "Laporan Nilai Persediaan (Moving Average)" },
+            { x => x.Headers, new List<string> { "SKU", "Nama Barang", "Kategori", "Gudang", "Kuantitas", "Satuan", "Biaya Rata-Rata", "Biaya Terakhir", "Total Nilai Persediaan" } },
+            { x => x.TotalRowCount, _summary?.TotalValuedItems ?? 100 },
+            { x => x.Metadata, new Dictionary<string, string>
+                {
+                    { "Metode Valuasi", "Moving Average (Bagian 9.3)" },
+                    { "Gudang", _availableWarehouses.FirstOrDefault(w => w.Id == _query.WarehouseId)?.Name ?? "Semua Gudang" }
+                }
+            },
+            { x => x.FetchRowsFunc, async () =>
+                {
+                    var exportQuery = new ValuationReportQuery
+                    {
+                        Page = 1,
+                        PageSize = 10000,
+                        WarehouseId = _query.WarehouseId,
+                        CategoryId = _query.CategoryId,
+                        Search = _query.Search,
+                        Mode = _query.Mode,
+                        AsOfDate = _historicalCutOffDate
+                    };
+                    var paged = await ReportService.GetValuationReportAsync(exportQuery);
+                    return paged.Items.Select(item => (IReadOnlyList<object?>)new object?[]
+                    {
+                        item.Sku,
+                        item.ProductName,
+                        item.CategoryName,
+                        item.WarehouseName,
+                        item.OnHandQty,
+                        item.UnitName,
+                        item.AvgCost,
+                        item.LastCost,
+                        item.OnHandValue
+                    }).ToList();
+                }
+            }
+        };
+
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        await DialogService.ShowAsync<Dialogs.ExportDialog>("Ekspor Laporan Nilai Persediaan", parameters, options);
     }
 }

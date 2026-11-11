@@ -47,3 +47,4 @@ public interface IStockIncidentService
         string? reason,
         CancellationToken cancellationToken = default);
 }
+

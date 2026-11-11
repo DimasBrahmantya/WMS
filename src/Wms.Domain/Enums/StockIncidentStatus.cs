@@ -9,3 +9,4 @@ public enum StockIncidentStatus
     Resolved = 5,
     Cancelled = 6
 }
+

@@ -67,7 +67,7 @@ Dashboard dari data aktual (agregasi di database), stok saat ini, kartu stok, ni
 
 PO + approval + penerimaan parsial, retur, transfer antar-gudang (status `in_transit`), stock opname (snapshot, recount, selisih nilai, approval, posting), kejadian hilang/rusak. Pemisahan tugas: pembuat tidak menyetujui dokumennya sendiri. Audit untuk semua posting, pembatalan, approval.
 
-## Tahap 6 — Notifikasi dan ekspor
+## Tahap 6 — Notifikasi dan ekspor [SELESAI]
 
 Background job (Hangfire atau Quartz.NET), notifikasi in-app dengan deduplikasi, ekspor CSV/XLSX/PDF mengikuti filter dan izin, laporan besar lewat streaming/job, ekspor tercatat di audit log.
 

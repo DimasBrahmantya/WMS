@@ -87,3 +87,4 @@ public class OperationalWorkflowEntitiesTests
         ret.Lines.Should().NotBeNull();
     }
 }
+

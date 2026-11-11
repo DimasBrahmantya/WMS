@@ -9,3 +9,4 @@ public enum StockReturnStatus
     Cancelled = 5,
     Rejected = 6
 }
+

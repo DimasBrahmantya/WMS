@@ -235,3 +235,4 @@ public class StockReturnAndIncidentTests
         incRecord.Data!.Status.Should().Be(StockIncidentStatus.Resolved);
     }
 }
+

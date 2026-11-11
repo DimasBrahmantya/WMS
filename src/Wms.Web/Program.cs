@@ -31,6 +31,7 @@ try
     builder.Services.AddInfrastructure(builder.Configuration);
 
     // UI & Blazor Services
+    builder.Services.AddControllers();
     builder.Services.AddRazorComponents()
         .AddInteractiveServerComponents();
     builder.Services.AddMudServices();
@@ -119,6 +120,7 @@ try
     app.UseAuthorization();
 
     // Endpoints
+    app.MapControllers();
     app.MapHealthChecks("/healthz");
     app.MapAccountEndpoints();
 

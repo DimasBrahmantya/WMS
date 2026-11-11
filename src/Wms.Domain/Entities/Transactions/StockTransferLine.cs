@@ -24,3 +24,4 @@ public class StockTransferLine
 
     public decimal RemainingQuantity => Math.Max(0, QuantityDispatched - QuantityReceived);
 }
+

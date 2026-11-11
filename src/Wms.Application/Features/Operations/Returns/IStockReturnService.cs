@@ -45,3 +45,4 @@ public interface IStockReturnService
         string? reason,
         CancellationToken cancellationToken = default);
 }
+

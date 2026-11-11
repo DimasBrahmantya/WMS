@@ -17,10 +17,10 @@ namespace Wms.Integration.Tests;
 
 public class StockConcurrencyAndIdempotencyTests
 {
-    private WmsDbContext CreateDbContext()
+    private WmsDbContext CreateDbContext(string? dbName = null)
     {
         var options = new DbContextOptionsBuilder<WmsDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .UseInMemoryDatabase(dbName ?? Guid.NewGuid().ToString())
             .Options;
         return new WmsDbContext(options);
     }
@@ -80,7 +80,8 @@ public class StockConcurrencyAndIdempotencyTests
         // Keduanya diposting secara bersamaan (concurrent Task.WhenAll).
         // Hasil yang diharapkan: TEPAT SATU yang berhasil, dan yang lain ditolak karena stok tidak mencukupi.
         // Sisa stok akhir harus tepat 0, dan tidak pernah menjadi negatif.
-        using var context = CreateDbContext();
+        var dbName = Guid.NewGuid().ToString();
+        using var context = CreateDbContext(dbName);
         var (_, warehouse, location, product, user) = SeedTestData(context);
 
         // Inisialisasi stok fisik = 5 unit
@@ -151,12 +152,18 @@ public class StockConcurrencyAndIdempotencyTests
         context.StockOuts.AddRange(stockOut1, stockOut2);
         await context.SaveChangesAsync();
 
-        var sequenceService = new DocumentSequenceService(context);
-        var idempotencyService = new IdempotencyService(context);
-        var postingService = new StockPostingService(context, sequenceService, idempotencyService);
+        using var context1 = CreateDbContext(dbName);
+        var sequenceService1 = new DocumentSequenceService(context1);
+        var idempotencyService1 = new IdempotencyService(context1);
+        var postingService1 = new StockPostingService(context1, sequenceService1, idempotencyService1);
 
-        var task1 = postingService.PostStockOutAsync(stockOut1.Id, user.Id, Guid.NewGuid().ToString());
-        var task2 = postingService.PostStockOutAsync(stockOut2.Id, user.Id, Guid.NewGuid().ToString());
+        using var context2 = CreateDbContext(dbName);
+        var sequenceService2 = new DocumentSequenceService(context2);
+        var idempotencyService2 = new IdempotencyService(context2);
+        var postingService2 = new StockPostingService(context2, sequenceService2, idempotencyService2);
+
+        var task1 = postingService1.PostStockOutAsync(stockOut1.Id, user.Id, Guid.NewGuid().ToString());
+        var task2 = postingService2.PostStockOutAsync(stockOut2.Id, user.Id, Guid.NewGuid().ToString());
 
         var results = await Task.WhenAll(task1, task2);
 
@@ -166,10 +173,11 @@ public class StockConcurrencyAndIdempotencyTests
         successCount.Should().Be(1, "Hanya satu posting pengeluaran yang boleh berhasil atas stok terakhir.");
         failureCount.Should().Be(1, "Posting kedua harus ditolak karena stok fisik tidak mencukupi.");
 
-        var finalBalance = await context.InventoryBalances.FirstOrDefaultAsync(b => b.ProductId == product.Id && b.WarehouseLocationId == location.Id);
+        using var verifyContext = CreateDbContext(dbName);
+        var finalBalance = await verifyContext.InventoryBalances.AsNoTracking().FirstOrDefaultAsync(b => b.ProductId == product.Id && b.WarehouseLocationId == location.Id);
         finalBalance!.OnHand.Should().Be(0m, "Stok akhir harus tepat 0.");
 
-        var movements = await context.StockMovements.Where(m => m.ProductId == product.Id).ToListAsync();
+        var movements = await verifyContext.StockMovements.AsNoTracking().Where(m => m.ProductId == product.Id).ToListAsync();
         movements.Should().HaveCount(1, "Hanya satu pergerakan pengeluaran yang boleh tercatat di ledger append-only.");
     }
 
@@ -177,7 +185,8 @@ public class StockConcurrencyAndIdempotencyTests
     public async Task RetryWithSameIdempotencyKey_ShouldNotDuplicateMovement()
     {
         // Pengujian Idempotency: Retry dengan idempotency key yang sama tidak membuat transaksi/movement ganda
-        using var context = CreateDbContext();
+        var dbName = Guid.NewGuid().ToString();
+        using var context = CreateDbContext(dbName);
         var (_, warehouse, location, product, user) = SeedTestData(context);
 
         context.InventoryBalances.Add(new InventoryBalance

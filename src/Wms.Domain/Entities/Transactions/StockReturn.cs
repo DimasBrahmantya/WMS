@@ -43,3 +43,4 @@ public class StockReturn
 
     public ICollection<StockReturnLine> Lines { get; set; } = new List<StockReturnLine>();
 }
+

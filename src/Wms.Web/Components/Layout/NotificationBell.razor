@@ -1,0 +1,149 @@
+@using System.Security.Claims
+@using Wms.Application.Features.Notifications
+@using Wms.Domain.Enums
+@inject INotificationService NotificationService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<MudBadge Content="@(_unreadCount > 99 ? "99+" : _unreadCount.ToString())"
+          Visible="@(_unreadCount > 0)"
+          Color="Color.Error"
+          Overlap="true"
+          Class="mr-2">
+    <MudMenu Icon="@Icons.Material.Filled.Notifications"
+             Color="Color.Inherit"
+             AnchorOrigin="Origin.BottomRight"
+             TransformOrigin="Origin.TopRight"
+             Dense="true"
+             MaxHeight="450">
+        <div style="min-width: 320px; max-width: 380px;">
+            <div class="d-flex align-center justify-space-between px-4 py-2 border-b">
+                <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                    Notifikasi (@_unreadCount)
+                </MudText>
+                @if (_unreadCount > 0)
+                {
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Primary"
+                               Size="Size.Small"
+                               OnClick="MarkAllAsRead">
+                        Tandai Semua Dibaca
+                    </MudButton>
+                }
+            </div>
+
+            @if (_recentNotifications.Count == 0)
+            {
+                <div class="pa-4 text-center">
+                    <MudIcon Icon="@Icons.Material.Outlined.NotificationsNone" Color="Color.Default" Size="Size.Large" Class="mb-2" />
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Tidak ada notifikasi baru</MudText>
+                </div>
+            }
+            else
+            {
+                <MudList T="string" Dense="true">
+                    @foreach (var notif in _recentNotifications)
+                    {
+                        <MudListItem OnClick="@(() => OpenNotification(notif))" Class="px-3 py-2 border-b">
+                            <div class="d-flex flex-column gap-1">
+                                <div class="d-flex align-center justify-space-between">
+                                    <MudChip T="string" Size="Size.Small" Color="@GetCategoryColor(notif.Category)" Variant="Variant.Filled">
+                                        @notif.CategoryName
+                                    </MudChip>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        @FormatTime(notif.CreatedAtUtc)
+                                    </MudText>
+                                </div>
+                                <MudText Typo="Typo.subtitle2" Class="font-weight-medium">
+                                    @notif.Title
+                                </MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Default">
+                                    @notif.Message
+                                </MudText>
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+
+            <div class="pa-2 border-t text-center">
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Primary"
+                           FullWidth="true"
+                           Size="Size.Small"
+                           Href="/notifications">
+                    Lihat Semua Notifikasi
+                </MudButton>
+            </div>
+        </div>
+    </MudMenu>
+</MudBadge>
+
+@code {
+    private int _unreadCount = 0;
+    private List<NotificationDto> _recentNotifications = new();
+    private string? _userId;
+    private string? _userRole;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            _userRole = user.FindFirst(ClaimTypes.Role)?.Value;
+            await LoadNotificationsAsync();
+        }
+    }
+
+    private async Task LoadNotificationsAsync()
+    {
+        if (string.IsNullOrEmpty(_userId)) return;
+
+        var summary = await NotificationService.GetUnreadSummaryAsync(_userId, _userRole, 5);
+        _unreadCount = summary.TotalUnread;
+        _recentNotifications = summary.RecentNotifications;
+    }
+
+    private async Task OpenNotification(NotificationDto notif)
+    {
+        if (string.IsNullOrEmpty(_userId)) return;
+
+        await NotificationService.MarkAsReadAsync(notif.Id, _userId);
+        await LoadNotificationsAsync();
+
+        if (!string.IsNullOrEmpty(notif.LinkUrl))
+        {
+            Navigation.NavigateTo(notif.LinkUrl);
+        }
+    }
+
+    private async Task MarkAllAsRead()
+    {
+        if (string.IsNullOrEmpty(_userId)) return;
+
+        await NotificationService.MarkAllAsReadAsync(_userId, _userRole);
+        await LoadNotificationsAsync();
+        Snackbar.Add("Semua notifikasi telah ditandai sudah dibaca.", Severity.Success);
+    }
+
+    private static Color GetCategoryColor(NotificationCategory category) => category switch
+    {
+        NotificationCategory.StockAlert => Color.Warning,
+        NotificationCategory.PurchaseOrder => Color.Info,
+        NotificationCategory.Reconciliation => Color.Error,
+        NotificationCategory.SystemExport => Color.Success,
+        _ => Color.Primary
+    };
+
+    private static string FormatTime(DateTime utcTime)
+    {
+        var diff = DateTime.UtcNow - utcTime;
+        if (diff.TotalMinutes < 1) return "Baru saja";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m lalu";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}j lalu";
+        return utcTime.ToString("dd MMM HH:mm");
+    }
+}

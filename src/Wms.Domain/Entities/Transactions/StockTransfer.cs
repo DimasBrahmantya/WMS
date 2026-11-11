@@ -41,3 +41,4 @@ public class StockTransfer
 
     public ICollection<StockTransferLine> Lines { get; set; } = new List<StockTransferLine>();
 }
+

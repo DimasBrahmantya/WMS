@@ -34,3 +34,4 @@ public class PurchaseOrder
 
     public ICollection<PurchaseOrderLine> Lines { get; set; } = new List<PurchaseOrderLine>();
 }
+

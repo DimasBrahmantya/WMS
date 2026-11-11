@@ -29,3 +29,4 @@ public class SeparationOfDutiesGuardTests
         result.Succeeded.Should().BeTrue();
     }
 }
+

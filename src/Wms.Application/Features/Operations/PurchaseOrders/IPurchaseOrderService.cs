@@ -60,3 +60,4 @@ public interface IPurchaseOrderService
         List<(Guid poLineId, decimal quantity)> rolledBackItems,
         CancellationToken cancellationToken = default);
 }
+

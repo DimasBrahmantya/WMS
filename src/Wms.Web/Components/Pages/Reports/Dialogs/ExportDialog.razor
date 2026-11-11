@@ -1,0 +1,177 @@
+@using System.Security.Claims
+@using Wms.Application.Features.Exports
+@using Wms.Domain.Enums
+@inject IExportService ExportService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Pilih format dokumen dan metode pemrosesan untuk laporan <strong>@ReportTitle</strong>.
+        </MudText>
+
+        <MudRadioGroup T="ExportFormat" @bind-Value="_selectedFormat" Class="mb-4">
+            <MudRadio Value="ExportFormat.Csv" Color="Color.Primary">
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Description" Color="Color.Success" Size="Size.Small" />
+                    <div>
+                        <MudText Typo="Typo.body2" Class="font-weight-medium">CSV (Comma-Separated Values)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Format data teks ringan, cocok untuk integrasi spreadsheet.</MudText>
+                    </div>
+                </div>
+            </MudRadio>
+            <MudRadio Value="ExportFormat.Xlsx" Color="Color.Primary">
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.TableChart" Color="Color.Primary" Size="Size.Small" />
+                    <div>
+                        <MudText Typo="Typo.body2" Class="font-weight-medium">Microsoft Excel (.xlsx)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Format tabel berwarna, rapi dengan kop dan format angka.</MudText>
+                    </div>
+                </div>
+            </MudRadio>
+            <MudRadio Value="ExportFormat.Pdf" Color="Color.Primary">
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf" Color="Color.Error" Size="Size.Small" />
+                    <div>
+                        <MudText Typo="Typo.body2" Class="font-weight-medium">Dokumen PDF (.pdf)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Format siap cetak dengan penomoran halaman otomatis.</MudText>
+                    </div>
+                </div>
+            </MudRadio>
+        </MudRadioGroup>
+
+        <MudDivider Class="my-3" />
+
+        <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">Metode Pemrosesan:</MudText>
+
+        @if (TotalRowCount > 1000)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                Data diperkirakan berjumlah <strong>@TotalRowCount</strong> baris (&gt; 1.000). Sangat disarankan diproses di latar belakang untuk menjaga stabilitas memori.
+            </MudAlert>
+        }
+
+        <MudRadioGroup T="bool" @bind-Value="_runInBackground">
+            <MudRadio Value="false" Color="Color.Primary" Disabled="@(TotalRowCount > 5000)">
+                Unduh Langsung Sekarang @(TotalRowCount > 1000 ? "(Bisa lambat)" : "")
+            </MudRadio>
+            <MudRadio Value="true" Color="Color.Primary">
+                Jalankan di Latar Belakang (Notifikasi saat selesai)
+            </MudRadio>
+        </MudRadioGroup>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Variant="Variant.Text">Batal</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   Disabled="_isProcessing"
+                   StartIcon="@Icons.Material.Filled.FileDownload"
+                   OnClick="Submit">
+            @if (_isProcessing)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Memproses...</span>
+            }
+            else
+            {
+                <span>Mulai Ekspor</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public string ReportType { get; set; } = "Report";
+    [Parameter] public string ReportTitle { get; set; } = "Laporan";
+    [Parameter] public IReadOnlyList<string> Headers { get; set; } = Array.Empty<string>();
+    [Parameter] public Func<Task<IReadOnlyList<IReadOnlyList<object?>>>> FetchRowsFunc { get; set; } = null!;
+    [Parameter] public IReadOnlyDictionary<string, string>? Metadata { get; set; }
+    [Parameter] public int TotalRowCount { get; set; }
+
+    private ExportFormat _selectedFormat = ExportFormat.Xlsx;
+    private bool _runInBackground = false;
+    private bool _isProcessing = false;
+
+    protected override void OnInitialized()
+    {
+        if (TotalRowCount > 1000)
+        {
+            _runInBackground = true;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        _isProcessing = true;
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "anonymous";
+            var userName = user.Identity?.Name ?? "User";
+
+            if (_runInBackground)
+            {
+                var queueReq = new QueueExportJobRequest(
+                    ReportType: ReportType,
+                    Format: _selectedFormat,
+                    FilterPayloadJson: Metadata != null ? System.Text.Json.JsonSerializer.Serialize(Metadata) : "{}",
+                    RequestedByUserId: userId,
+                    RequestedByUserName: userName
+                );
+
+                var queueResult = await ExportService.QueueExportJobAsync(queueReq);
+                if (queueResult.Succeeded)
+                {
+                    Snackbar.Add("Ekspor telah dijadwalkan di latar belakang. Anda akan menerima notifikasi jika berkas telah siap.", Severity.Info);
+                    MudDialog.Close(DialogResult.Ok(true));
+                }
+                else
+                {
+                    Snackbar.Add(queueResult.ErrorMessage ?? "Gagal menjadwalkan ekspor.", Severity.Error);
+                }
+            }
+            else
+            {
+                var rows = await FetchRowsFunc();
+                var directReq = new DirectExportRequest(
+                    ReportType: ReportType,
+                    Format: _selectedFormat,
+                    Title: ReportTitle,
+                    Headers: Headers,
+                    Rows: rows,
+                    Metadata: Metadata,
+                    RequestedByUserId: userId,
+                    RequestedByUserName: userName
+                );
+
+                var directResult = await ExportService.ExportDirectAsync(directReq);
+                if (directResult.Succeeded && directResult.Data != null)
+                {
+                    var base64 = Convert.ToBase64String(directResult.Data.FileContents);
+                    await JS.InvokeVoidAsync("downloadFileFromBase64", directResult.Data.FileName, directResult.Data.ContentType, base64);
+                    Snackbar.Add($"Laporan berhasil diunduh ({directResult.Data.RowCount} baris).", Severity.Success);
+                    MudDialog.Close(DialogResult.Ok(true));
+                }
+                else
+                {
+                    Snackbar.Add(directResult.ErrorMessage ?? "Gagal memproses ekspor langsung.", Severity.Error);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Terjadi kesalahan: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isProcessing = false;
+        }
+    }
+}

@@ -4,9 +4,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Wms.Application.Common.Interfaces;
 using Wms.Domain.Common;
+using Wms.Domain.Entities.Exports;
 using Wms.Domain.Entities.Identity;
 using Wms.Domain.Entities.Inventory;
 using Wms.Domain.Entities.Master;
+using Wms.Domain.Entities.Notifications;
 using Wms.Domain.Entities.System;
 using Wms.Domain.Entities.Transactions;
 
@@ -79,6 +81,10 @@ public class WmsDbContext : IdentityDbContext<
     public DbSet<StockReturnLine> StockReturnLines => Set<StockReturnLine>();
     public DbSet<StockIncident> StockIncidents => Set<StockIncident>();
     public DbSet<StockIncidentLine> StockIncidentLines => Set<StockIncidentLine>();
+
+    // Notifikasi & Ekspor (Fase 2 / Tahap 6)
+    public DbSet<AppNotification> AppNotifications => Set<AppNotification>();
+    public DbSet<ExportJob> ExportJobs => Set<ExportJob>();
 
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
@@ -674,5 +680,6 @@ public class WmsDbContext : IdentityDbContext<
         });
 
         Configurations.OperationalWorkflowConfigurations.Configure(builder, IsUserRestrictedToWarehouses, UserAllowedWarehouseIds);
+        Configurations.NotificationAndExportConfigurations.Configure(builder);
     }
 }

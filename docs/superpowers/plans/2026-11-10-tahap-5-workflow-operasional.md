@@ -187,3 +187,4 @@
 - Modify: `docs/decisions.md` (Catat Keputusan 8: Pemisahan Tugas / SoD dan Workflow Operasional Tahap 5)
 - Modify: `PROMPT_AI_WMS.md` (Tandai Tahap 5 selesai)
 - Verify entire test suite passes
+

@@ -6,6 +6,7 @@
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
 @inject IClock Clock
+@inject IDialogService DialogService
 
 <PageTitle>Kartu Stok Barang - Warehouse Management System</PageTitle>
 
@@ -30,6 +31,10 @@
         <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Assessment"
                    Href="/reports/stock">
             Stok Saat Ini
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FileDownload"
+                   OnClick="OpenExportDialog" Disabled="_report == null">
+            Ekspor Kartu Stok
         </MudButton>
     </div>
 </div>
@@ -372,5 +377,46 @@ else if (!_selectedProductId.HasValue)
         {
             _loading = false;
         }
+    }
+
+    private async Task OpenExportDialog()
+    {
+        if (_report == null || _selectedProduct == null) return;
+
+        var parameters = new DialogParameters<Dialogs.ExportDialog>
+        {
+            { x => x.ReportType, "StockCard" },
+            { x => x.ReportTitle, $"Kartu Stok {_selectedProduct.Name} ({_selectedProduct.Sku})" },
+            { x => x.Headers, new List<string> { "Waktu (UTC)", "No. Dokumen", "Tipe Transaksi", "Referensi", "Masuk", "Keluar", "Saldo Berjalan", "Keterangan" } },
+            { x => x.TotalRowCount, _report.Lines.Count },
+            { x => x.Metadata, new Dictionary<string, string>
+                {
+                    { "SKU Barang", _selectedProduct.Sku },
+                    { "Nama Barang", _selectedProduct.Name },
+                    { "Gudang", _report.WarehouseName ?? "Semua Gudang" },
+                    { "Saldo Awal", _report.OpeningBalance.ToString("N2") },
+                    { "Saldo Akhir", _report.ClosingBalance.ToString("N2") }
+                }
+            },
+            { x => x.FetchRowsFunc, () =>
+                {
+                    var rows = _report.Lines.Select(line => (IReadOnlyList<object?>)new object?[]
+                    {
+                        line.TimestampUtc,
+                        line.MovementNumber,
+                        line.MovementType.ToString(),
+                        line.SourceDocumentNumber,
+                        line.QuantityIn > 0 ? line.QuantityIn : null,
+                        line.QuantityOut > 0 ? line.QuantityOut : null,
+                        line.RunningBalance,
+                        line.Reason ?? "-"
+                    }).ToList();
+                    return Task.FromResult<IReadOnlyList<IReadOnlyList<object?>>>(rows);
+                }
+            }
+        };
+
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        await DialogService.ShowAsync<Dialogs.ExportDialog>("Ekspor Kartu Stok", parameters, options);
     }
 }

@@ -48,3 +48,4 @@ public class StockIncident
 
     public ICollection<StockIncidentLine> Lines { get; set; } = new List<StockIncidentLine>();
 }
+

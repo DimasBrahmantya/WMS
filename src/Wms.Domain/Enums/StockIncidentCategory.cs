@@ -8,3 +8,4 @@ public enum StockIncidentCategory
     Quarantine = 4,
     Other = 5
 }
+

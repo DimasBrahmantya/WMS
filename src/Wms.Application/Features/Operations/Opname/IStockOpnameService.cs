@@ -56,3 +56,4 @@ public interface IStockOpnameService
         string? reason,
         CancellationToken cancellationToken = default);
 }
+

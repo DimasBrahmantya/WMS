@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Quartz;
 using Wms.Application.Common.Interfaces;
 using Wms.Application.Features.Auth;
 using Wms.Domain.Common;
@@ -85,6 +86,55 @@ public static class DependencyInjection
         services.AddScoped<Wms.Application.Features.Operations.Opname.IStockOpnameService, Services.Operations.StockOpnameService>();
         services.AddScoped<Wms.Application.Features.Operations.Returns.IStockReturnService, Services.Operations.StockReturnService>();
         services.AddScoped<Wms.Application.Features.Operations.Incidents.IStockIncidentService, Services.Operations.StockIncidentService>();
+
+        // Notifikasi & Ekspor (Tahap 6)
+        services.AddScoped<Wms.Application.Features.Notifications.INotificationService, Services.Notifications.NotificationService>();
+        services.AddSingleton<Services.Exports.FileStorage.IExportFileStorage, Services.Exports.FileStorage.LocalExportFileStorage>();
+        services.AddSingleton<Services.Exports.Formatters.IReportFormatter, Services.Exports.Formatters.CsvReportFormatter>();
+        services.AddSingleton<Services.Exports.Formatters.IReportFormatter, Services.Exports.Formatters.ExcelReportFormatter>();
+        services.AddSingleton<Services.Exports.Formatters.IReportFormatter, Services.Exports.Formatters.PdfReportFormatter>();
+        services.AddScoped<Wms.Application.Features.Exports.IExportService, Services.Exports.ExportService>();
+
+        // Background Job Scheduler (Quartz.NET)
+        services.AddQuartz(q =>
+        {
+            var stockAlertKey = new JobKey("StockAlertJob");
+            q.AddJob<BackgroundJobs.StockAlertJob>(opts => opts.WithIdentity(stockAlertKey));
+            q.AddTrigger(opts => opts
+                .ForJob(stockAlertKey)
+                .WithIdentity("StockAlertJob-Trigger")
+                .WithSimpleSchedule(x => x.WithIntervalInMinutes(15).RepeatForever()));
+
+            var overduePoKey = new JobKey("OverduePurchaseOrderJob");
+            q.AddJob<BackgroundJobs.OverduePurchaseOrderJob>(opts => opts.WithIdentity(overduePoKey));
+            q.AddTrigger(opts => opts
+                .ForJob(overduePoKey)
+                .WithIdentity("OverduePurchaseOrderJob-Trigger")
+                .WithSimpleSchedule(x => x.WithIntervalInHours(1).RepeatForever()));
+
+            var reconKey = new JobKey("ReconciliationJob");
+            q.AddJob<BackgroundJobs.ReconciliationJob>(opts => opts.WithIdentity(reconKey));
+            q.AddTrigger(opts => opts
+                .ForJob(reconKey)
+                .WithIdentity("ReconciliationJob-Trigger")
+                .WithSimpleSchedule(x => x.WithIntervalInHours(12).RepeatForever()));
+
+            var exportWorkerKey = new JobKey("BackgroundExportWorkerJob");
+            q.AddJob<BackgroundJobs.BackgroundExportWorkerJob>(opts => opts.WithIdentity(exportWorkerKey));
+            q.AddTrigger(opts => opts
+                .ForJob(exportWorkerKey)
+                .WithIdentity("BackgroundExportWorkerJob-Trigger")
+                .WithSimpleSchedule(x => x.WithIntervalInSeconds(30).RepeatForever()));
+
+            var cleanupKey = new JobKey("CleanupExportFilesJob");
+            q.AddJob<BackgroundJobs.CleanupExportFilesJob>(opts => opts.WithIdentity(cleanupKey));
+            q.AddTrigger(opts => opts
+                .ForJob(cleanupKey)
+                .WithIdentity("CleanupExportFilesJob-Trigger")
+                .WithSimpleSchedule(x => x.WithIntervalInHours(24).RepeatForever()));
+        });
+
+        services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
 
         return services;
     }

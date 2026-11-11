@@ -192,3 +192,4 @@ public class StockOpnameTests
         movement.TotalValue.Should().Be(60000);
     }
 }
+

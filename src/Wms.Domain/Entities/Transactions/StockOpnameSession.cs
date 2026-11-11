@@ -41,3 +41,4 @@ public class StockOpnameSession
 
     public ICollection<StockOpnameLine> Lines { get; set; } = new List<StockOpnameLine>();
 }
+

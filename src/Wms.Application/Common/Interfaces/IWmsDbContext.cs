@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using Wms.Domain.Entities.Exports;
 using Wms.Domain.Entities.Identity;
 using Wms.Domain.Entities.Inventory;
 using Wms.Domain.Entities.Master;
+using Wms.Domain.Entities.Notifications;
 using Wms.Domain.Entities.System;
 using Wms.Domain.Entities.Transactions;
 
@@ -54,6 +56,10 @@ public interface IWmsDbContext
     DbSet<StockReturnLine> StockReturnLines { get; }
     DbSet<StockIncident> StockIncidents { get; }
     DbSet<StockIncidentLine> StockIncidentLines { get; }
+
+    // Notifikasi & Ekspor (Fase 2 / Tahap 6)
+    DbSet<AppNotification> AppNotifications { get; }
+    DbSet<ExportJob> ExportJobs { get; }
 
     DatabaseFacade Database { get; }
 

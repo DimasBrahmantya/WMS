@@ -12,6 +12,7 @@ namespace Wms.Infrastructure.Services.Stock;
 
 public class StockPostingService : IStockPostingService
 {
+    private static readonly SemaphoreSlim _stockOutPostingLock = new(1, 1);
     private readonly IWmsDbContext _dbContext;
     private readonly IDocumentSequenceService _sequenceService;
     private readonly IIdempotencyService _idempotencyService;
@@ -413,140 +414,148 @@ public class StockPostingService : IStockPostingService
             idempotencyKey,
             async () =>
             {
-                using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
+                await _stockOutPostingLock.WaitAsync(cancellationToken);
                 try
                 {
-                    var stockOut = await _dbContext.StockOuts
-                        .Include(s => s.Lines)
-                        .FirstOrDefaultAsync(s => s.Id == stockOutId, cancellationToken);
-
-                    if (stockOut == null)
+                    using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
+                    try
                     {
-                        return Result<Guid>.Failure("Dokumen pengeluaran barang tidak ditemukan.");
-                    }
+                        var stockOut = await _dbContext.StockOuts
+                            .Include(s => s.Lines)
+                            .FirstOrDefaultAsync(s => s.Id == stockOutId, cancellationToken);
 
-                    if (stockOut.Status != DocumentStatus.Draft && stockOut.Status != DocumentStatus.PendingApproval)
-                    {
-                        return Result<Guid>.Failure($"Dokumen pengeluaran barang tidak dapat diposting karena status saat ini adalah '{stockOut.Status}'.");
-                    }
-
-                    if (stockOut.Lines.Count == 0)
-                    {
-                        return Result<Guid>.Failure("Dokumen pengeluaran barang tidak memiliki baris barang.");
-                    }
-
-                    // Urutkan deterministik untuk mencegah deadlock
-                    var orderedLines = stockOut.Lines
-                        .OrderBy(l => l.ProductId)
-                        .ThenBy(l => l.WarehouseLocationId)
-                        .ToList();
-
-                    var now = DateTime.UtcNow;
-
-                    foreach (var line in orderedLines)
-                    {
-                        // 1. Periksa ketersediaan stok
-                        var balance = await _dbContext.InventoryBalances
-                            .FirstOrDefaultAsync(b =>
-                                b.ProductId == line.ProductId &&
-                                b.WarehouseId == stockOut.WarehouseId &&
-                                b.WarehouseLocationId == line.WarehouseLocationId &&
-                                b.Status == StockStatus.Available &&
-                                b.BatchNumber == line.BatchNumber, cancellationToken);
-
-                        var availableStock = balance?.Available ?? 0m;
-                        if (balance == null || availableStock < line.Quantity)
+                        if (stockOut == null)
                         {
-                            await transaction.RollbackAsync(cancellationToken);
-                            return Result<Guid>.Failure($"Stok tidak mencukupi untuk barang di lokasi terpilih. Tersedia: {availableStock}, Diminta: {line.Quantity}.");
+                            return Result<Guid>.Failure("Dokumen pengeluaran barang tidak ditemukan.");
                         }
 
-                        var balanceBefore = balance.OnHand;
-                        var balanceAfter = balanceBefore - line.Quantity;
-                        balance.OnHand = balanceAfter;
-                        balance.UpdatedAtUtc = now;
-
-                        // 2. Valuasi Rata-Rata Bergerak: dinilai pada avg_cost saat posting sesuai Bagian 9.3
-                        var valuation = await _dbContext.InventoryValuations
-                            .FirstOrDefaultAsync(v =>
-                                v.ProductId == line.ProductId &&
-                                v.WarehouseId == stockOut.WarehouseId, cancellationToken);
-
-                        var unitCost = valuation?.AvgCost ?? 0m;
-                        if (unitCost <= 0 && valuation != null && valuation.LastCost > 0)
+                        if (stockOut.Status != DocumentStatus.Draft && stockOut.Status != DocumentStatus.PendingApproval)
                         {
-                            unitCost = valuation.LastCost;
+                            return Result<Guid>.Failure($"Dokumen pengeluaran barang tidak dapat diposting karena status saat ini adalah '{stockOut.Status}'.");
                         }
 
-                        var totalValue = Math.Round(line.Quantity * unitCost, 4, MidpointRounding.AwayFromZero);
-
-                        line.UnitCost = unitCost;
-                        line.TotalCost = totalValue;
-
-                        if (valuation != null)
+                        if (stockOut.Lines.Count == 0)
                         {
-                            var newQty = valuation.OnHandQty - line.Quantity;
-                            var newValue = valuation.OnHandValue - totalValue;
+                            return Result<Guid>.Failure("Dokumen pengeluaran barang tidak memiliki baris barang.");
+                        }
 
-                            // Aturan Bagian 9.3: Saat on_hand_qty menjadi 0, on_hand_value harus 0 (selisih pembulatan dikoreksi)
-                            if (newQty <= 0)
+                        // Urutkan deterministik untuk mencegah deadlock
+                        var orderedLines = stockOut.Lines
+                            .OrderBy(l => l.ProductId)
+                            .ThenBy(l => l.WarehouseLocationId)
+                            .ToList();
+
+                        var now = DateTime.UtcNow;
+
+                        foreach (var line in orderedLines)
+                        {
+                            // 1. Periksa ketersediaan stok
+                            var balance = await _dbContext.InventoryBalances
+                                .FirstOrDefaultAsync(b =>
+                                    b.ProductId == line.ProductId &&
+                                    b.WarehouseId == stockOut.WarehouseId &&
+                                    b.WarehouseLocationId == line.WarehouseLocationId &&
+                                    b.Status == StockStatus.Available &&
+                                    b.BatchNumber == line.BatchNumber, cancellationToken);
+
+                            var availableStock = balance?.Available ?? 0m;
+                            if (balance == null || availableStock < line.Quantity)
                             {
-                                valuation.OnHandQty = 0m;
-                                valuation.OnHandValue = 0m;
+                                await transaction.RollbackAsync(cancellationToken);
+                                return Result<Guid>.Failure($"Stok tidak mencukupi untuk barang di lokasi terpilih. Tersedia: {availableStock}, Diminta: {line.Quantity}.");
                             }
-                            else
+
+                            var balanceBefore = balance.OnHand;
+                            var balanceAfter = balanceBefore - line.Quantity;
+                            balance.OnHand = balanceAfter;
+                            balance.UpdatedAtUtc = now;
+
+                            // 2. Valuasi Rata-Rata Bergerak: dinilai pada avg_cost saat posting sesuai Bagian 9.3
+                            var valuation = await _dbContext.InventoryValuations
+                                .FirstOrDefaultAsync(v =>
+                                    v.ProductId == line.ProductId &&
+                                    v.WarehouseId == stockOut.WarehouseId, cancellationToken);
+
+                            var unitCost = valuation?.AvgCost ?? 0m;
+                            if (unitCost <= 0 && valuation != null && valuation.LastCost > 0)
                             {
-                                if (newValue < 0) newValue = 0m;
-                                valuation.OnHandQty = newQty;
-                                valuation.OnHandValue = newValue;
-                                // avg_cost tidak berubah pada barang keluar normal
+                                unitCost = valuation.LastCost;
                             }
-                            valuation.UpdatedAtUtc = now;
+
+                            var totalValue = Math.Round(line.Quantity * unitCost, 4, MidpointRounding.AwayFromZero);
+
+                            line.UnitCost = unitCost;
+                            line.TotalCost = totalValue;
+
+                            if (valuation != null)
+                            {
+                                var newQty = valuation.OnHandQty - line.Quantity;
+                                var newValue = valuation.OnHandValue - totalValue;
+
+                                // Aturan Bagian 9.3: Saat on_hand_qty menjadi 0, on_hand_value harus 0 (selisih pembulatan dikoreksi)
+                                if (newQty <= 0)
+                                {
+                                    valuation.OnHandQty = 0m;
+                                    valuation.OnHandValue = 0m;
+                                }
+                                else
+                                {
+                                    if (newValue < 0) newValue = 0m;
+                                    valuation.OnHandQty = newQty;
+                                    valuation.OnHandValue = newValue;
+                                    // avg_cost tidak berubah pada barang keluar normal
+                                }
+                                valuation.UpdatedAtUtc = now;
+                            }
+
+                            // 3. Catat append-only StockMovement
+                            var movementNumber = await _sequenceService.GetNextDocumentNumberAsync("MV", now, cancellationToken);
+                            var movement = new StockMovement
+                            {
+                                Id = Guid.NewGuid(),
+                                MovementNumber = movementNumber,
+                                MovementType = MovementType.GoodsIssue,
+                                ProductId = line.ProductId,
+                                WarehouseId = stockOut.WarehouseId,
+                                WarehouseLocationId = line.WarehouseLocationId,
+                                BatchNumber = line.BatchNumber,
+                                StockStatus = StockStatus.Available,
+                                Quantity = line.Quantity,
+                                Direction = MovementDirection.Out,
+                                BalanceBefore = balanceBefore,
+                                BalanceAfter = balanceAfter,
+                                UnitCost = unitCost,
+                                TotalValue = totalValue,
+                                SourceDocumentType = SourceDocumentType.GoodsIssue,
+                                SourceDocumentId = stockOut.Id,
+                                SourceDocumentNumber = stockOut.IssueNumber,
+                                Reason = stockOut.Notes ?? stockOut.IssueType.ToString(),
+                                UserId = userId,
+                                TimestampUtc = now,
+                                Status = MovementStatus.Posted
+                            };
+                            _dbContext.StockMovements.Add(movement);
                         }
 
-                        // 3. Catat append-only StockMovement
-                        var movementNumber = await _sequenceService.GetNextDocumentNumberAsync("MV", now, cancellationToken);
-                        var movement = new StockMovement
-                        {
-                            Id = Guid.NewGuid(),
-                            MovementNumber = movementNumber,
-                            MovementType = MovementType.GoodsIssue,
-                            ProductId = line.ProductId,
-                            WarehouseId = stockOut.WarehouseId,
-                            WarehouseLocationId = line.WarehouseLocationId,
-                            BatchNumber = line.BatchNumber,
-                            StockStatus = StockStatus.Available,
-                            Quantity = line.Quantity,
-                            Direction = MovementDirection.Out,
-                            BalanceBefore = balanceBefore,
-                            BalanceAfter = balanceAfter,
-                            UnitCost = unitCost,
-                            TotalValue = totalValue,
-                            SourceDocumentType = SourceDocumentType.GoodsIssue,
-                            SourceDocumentId = stockOut.Id,
-                            SourceDocumentNumber = stockOut.IssueNumber,
-                            Reason = stockOut.Notes ?? stockOut.IssueType.ToString(),
-                            UserId = userId,
-                            TimestampUtc = now,
-                            Status = MovementStatus.Posted
-                        };
-                        _dbContext.StockMovements.Add(movement);
+                        stockOut.Status = DocumentStatus.Posted;
+                        stockOut.PostedByUserId = userId;
+                        stockOut.PostedAtUtc = now;
+                        stockOut.UpdatedAtUtc = now;
+
+                        await _dbContext.SaveChangesAsync(cancellationToken);
+                        await transaction.CommitAsync(cancellationToken);
+
+                        return Result<Guid>.Success(stockOut.Id);
                     }
-
-                    stockOut.Status = DocumentStatus.Posted;
-                    stockOut.PostedByUserId = userId;
-                    stockOut.PostedAtUtc = now;
-                    stockOut.UpdatedAtUtc = now;
-
-                    await _dbContext.SaveChangesAsync(cancellationToken);
-                    await transaction.CommitAsync(cancellationToken);
-
-                    return Result<Guid>.Success(stockOut.Id);
+                    catch (Exception ex)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return Result<Guid>.Failure($"Gagal memposting pengeluaran barang: {ex.Message}");
+                    }
                 }
-                catch (Exception ex)
+                finally
                 {
-                    await transaction.RollbackAsync(cancellationToken);
-                    return Result<Guid>.Failure($"Gagal memposting pengeluaran barang: {ex.Message}");
+                    _stockOutPostingLock.Release();
                 }
             },
             cancellationToken);

@@ -213,3 +213,4 @@ public class StockTransferTests
         destValuation.OnHandValue.Should().Be(500000);
     }
 }
+

@@ -11,3 +11,4 @@ public enum StockOpnameStatus
     Cancelled = 7,
     Rejected = 8
 }
+

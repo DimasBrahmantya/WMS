@@ -5,3 +5,4 @@ public enum StockReturnType
     ReturnToSupplier = 1,
     ReturnFromCustomer = 2
 }
+

@@ -128,7 +128,7 @@ public class PurchaseOrderTests
         validApprovalResult.Succeeded.Should().BeTrue();
 
         var po = await poService.GetPurchaseOrderByIdAsync(poId);
-        po.Data.Status.Should().Be(PurchaseOrderStatus.Approved);
+        po.Data!.Status.Should().Be(PurchaseOrderStatus.Approved);
         po.Data.ApprovedByUserId.Should().Be(approver.Id);
     }
 
@@ -160,7 +160,7 @@ public class PurchaseOrderTests
         await poService.MarkAsOrderedAsync(poId, creator.Id);
 
         var poBefore = await poService.GetPurchaseOrderByIdAsync(poId);
-        poBefore.Data.Status.Should().Be(PurchaseOrderStatus.Ordered);
+        poBefore.Data!.Status.Should().Be(PurchaseOrderStatus.Ordered);
         var poLineId = poBefore.Data.Lines.First().Id;
 
         // 2. First partial receipt (4 units)
@@ -198,7 +198,7 @@ public class PurchaseOrderTests
 
         // Verify PO status is PartiallyReceived
         var poAfterGr1 = await poService.GetPurchaseOrderByIdAsync(poId);
-        poAfterGr1.Data.Status.Should().Be(PurchaseOrderStatus.PartiallyReceived);
+        poAfterGr1.Data!.Status.Should().Be(PurchaseOrderStatus.PartiallyReceived);
         poAfterGr1.Data.Lines.First().ReceivedQuantity.Should().Be(4);
         poAfterGr1.Data.Lines.First().RemainingQuantity.Should().Be(6);
 
@@ -237,7 +237,7 @@ public class PurchaseOrderTests
 
         // Verify PO status is now Received (fulfilled)
         var poAfterGr2 = await poService.GetPurchaseOrderByIdAsync(poId);
-        poAfterGr2.Data.Status.Should().Be(PurchaseOrderStatus.Received);
+        poAfterGr2.Data!.Status.Should().Be(PurchaseOrderStatus.Received);
         poAfterGr2.Data.Lines.First().ReceivedQuantity.Should().Be(10);
         poAfterGr2.Data.Lines.First().RemainingQuantity.Should().Be(0);
 
@@ -246,7 +246,7 @@ public class PurchaseOrderTests
         revResult.Succeeded.Should().BeTrue();
 
         var poAfterRev = await poService.GetPurchaseOrderByIdAsync(poId);
-        poAfterRev.Data.Status.Should().Be(PurchaseOrderStatus.PartiallyReceived);
+        poAfterRev.Data!.Status.Should().Be(PurchaseOrderStatus.PartiallyReceived);
         poAfterRev.Data.Lines.First().ReceivedQuantity.Should().Be(4);
         poAfterRev.Data.Lines.First().RemainingQuantity.Should().Be(6);
     }

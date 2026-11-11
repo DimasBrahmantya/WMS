@@ -17,3 +17,4 @@ public static class SeparationOfDutiesGuard
         return Result.Success();
     }
 }
+

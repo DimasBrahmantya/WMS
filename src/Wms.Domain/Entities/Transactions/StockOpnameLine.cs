@@ -25,3 +25,4 @@ public class StockOpnameLine
     public Product Product { get; set; } = null!;
     public WarehouseLocation? Location { get; set; }
 }
+

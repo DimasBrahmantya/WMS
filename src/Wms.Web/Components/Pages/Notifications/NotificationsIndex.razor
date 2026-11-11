@@ -1,0 +1,310 @@
+@page "/notifications"
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Wms.Application.Features.Notifications
+@using Wms.Domain.Enums
+@attribute [Authorize]
+@inject INotificationService NotificationService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Pusat Notifikasi — WMS Nusantara</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <div class="d-flex align-center justify-space-between mb-4">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Pusat Notifikasi</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Pantau peringatan stok, status pengiriman PO, anomali rekonsiliasi, dan ekspor sistem.
+            </MudText>
+        </div>
+        <div class="d-flex gap-2">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.DoneAll"
+                       OnClick="MarkAllAsReadAsync">
+                Tandai Semua Dibaca
+            </MudButton>
+            <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                           Variant="Variant.Outlined"
+                           Color="Color.Default"
+                           OnClick="LoadDataAsync" />
+        </div>
+    </div>
+
+    <MudCard Elevation="1" Class="mb-4 pa-4">
+        <MudGrid>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="NotificationStatus?" Label="Status" Value="_selectedStatus" ValueChanged="OnStatusChanged" Clearable="true">
+                    <MudSelectItem T="NotificationStatus?" Value="@((NotificationStatus?)NotificationStatus.Unread)">Belum Dibaca</MudSelectItem>
+                    <MudSelectItem T="NotificationStatus?" Value="@((NotificationStatus?)NotificationStatus.Read)">Sudah Dibaca</MudSelectItem>
+                    <MudSelectItem T="NotificationStatus?" Value="@((NotificationStatus?)NotificationStatus.Resolved)">Selesai / Pulih</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="NotificationCategory?" Label="Kategori" Value="_selectedCategory" ValueChanged="OnCategoryChanged" Clearable="true">
+                    <MudSelectItem T="NotificationCategory?" Value="@((NotificationCategory?)NotificationCategory.StockAlert)">Peringatan Stok</MudSelectItem>
+                    <MudSelectItem T="NotificationCategory?" Value="@((NotificationCategory?)NotificationCategory.PurchaseOrder)">Purchase Order</MudSelectItem>
+                    <MudSelectItem T="NotificationCategory?" Value="@((NotificationCategory?)NotificationCategory.Reconciliation)">Rekonsiliasi Ledger</MudSelectItem>
+                    <MudSelectItem T="NotificationCategory?" Value="@((NotificationCategory?)NotificationCategory.SystemExport)">Ekspor Laporan</MudSelectItem>
+                    <MudSelectItem T="NotificationCategory?" Value="@((NotificationCategory?)NotificationCategory.General)">Umum</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudTextField T="string"
+                              Label="Cari Judul / Pesan"
+                              Value="_searchTerm"
+                              ValueChanged="OnSearchChanged"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              Clearable="true" />
+            </MudItem>
+        </MudGrid>
+    </MudCard>
+
+    <MudCard Elevation="1">
+        <MudTable Items="_notifications"
+                  Hover="true"
+                  Dense="true"
+                  Loading="_loading"
+                  LoadingProgressColor="Color.Primary">
+            <HeaderContent>
+                <MudTh Style="width: 140px;">Kategori</MudTh>
+                <MudTh>Notifikasi</MudTh>
+                <MudTh Style="width: 120px;">Status</MudTh>
+                <MudTh Style="width: 160px;">Waktu</MudTh>
+                <MudTh Style="width: 140px; text-align: center;">Aksi</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Kategori">
+                    <MudChip T="string" Size="Size.Small" Color="@GetCategoryColor(context.Category)" Variant="Variant.Filled">
+                        @context.CategoryName
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Notifikasi">
+                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                        @context.Title
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Default">
+                        @context.Message
+                    </MudText>
+                </MudTd>
+                <MudTd DataLabel="Status">
+                    <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(context.Status)" Variant="Variant.Outlined">
+                        @GetStatusText(context.Status)
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Waktu">
+                    <MudText Typo="Typo.body2">
+                        @context.CreatedAtUtc.ToLocalTime().ToString("dd MMM yyyy HH:mm")
+                    </MudText>
+                </MudTd>
+                <MudTd DataLabel="Aksi" Style="text-align: center;">
+                    <div class="d-flex justify-center gap-1">
+                        @if (context.Status == NotificationStatus.Unread)
+                        {
+                            <MudTooltip Text="Tandai Sudah Dibaca">
+                                <MudIconButton Icon="@Icons.Material.Filled.Check"
+                                               Size="Size.Small"
+                                               Color="Color.Primary"
+                                               OnClick="@(() => MarkAsReadAsync(context.Id))" />
+                            </MudTooltip>
+                        }
+                        @if (!string.IsNullOrEmpty(context.LinkUrl))
+                        {
+                            <MudTooltip Text="Buka Dokumen Terkait">
+                                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                               Size="Size.Small"
+                                               Color="Color.Info"
+                                               OnClick="@(() => OpenLink(context))" />
+                            </MudTooltip>
+                        }
+                    </div>
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <div class="pa-8 text-center">
+                    <MudIcon Icon="@Icons.Material.Outlined.NotificationsOff" Size="Size.Large" Color="Color.Default" Class="mb-2" />
+                    <MudText Typo="Typo.body1" Color="Color.Secondary">Tidak ada notifikasi yang sesuai filter.</MudText>
+                </div>
+            </NoRecordsContent>
+            <PagerContent>
+                <div class="d-flex align-center justify-space-between pa-4">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Total @_totalCount notifikasi (Halaman @_pageNumber dari @Math.Max(1, (int)Math.Ceiling(_totalCount / (double)_pageSize)))
+                    </MudText>
+                    <div class="d-flex gap-2">
+                        <MudButton Variant="Variant.Outlined"
+                                   Size="Size.Small"
+                                   Disabled="@(_pageNumber <= 1)"
+                                   OnClick="PreviousPage">
+                            Sebelumnya
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Size="Size.Small"
+                                   Disabled="@(_pageNumber >= Math.Ceiling(_totalCount / (double)_pageSize))"
+                                   OnClick="NextPage">
+                            Berikutnya
+                        </MudButton>
+                    </div>
+                </div>
+            </PagerContent>
+        </MudTable>
+    </MudCard>
+</MudContainer>
+
+@code {
+    private List<NotificationDto> _notifications = new();
+    private bool _loading = true;
+    private int _totalCount = 0;
+    private int _pageNumber = 1;
+    private int _pageSize = 15;
+
+    private NotificationStatus? _selectedStatus;
+    private NotificationCategory? _selectedCategory;
+    private string? _searchTerm;
+
+    private string? _userId;
+    private string? _userRole;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            _userRole = user.FindFirst(ClaimTypes.Role)?.Value;
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        if (string.IsNullOrEmpty(_userId)) return;
+
+        _loading = true;
+        try
+        {
+            var filter = new NotificationFilterRequest(
+                Status: _selectedStatus,
+                Category: _selectedCategory,
+                SearchTerm: _searchTerm,
+                PageNumber: _pageNumber,
+                PageSize: _pageSize
+            );
+
+            var result = await NotificationService.GetUserNotificationsAsync(filter, _userId, _userRole);
+            _notifications = result.Items.ToList();
+            _totalCount = result.TotalCount;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnStatusChanged(NotificationStatus? status)
+    {
+        _selectedStatus = status;
+        _pageNumber = 1;
+        await LoadDataAsync();
+    }
+
+    private async Task OnCategoryChanged(NotificationCategory? category)
+    {
+        _selectedCategory = category;
+        _pageNumber = 1;
+        await LoadDataAsync();
+    }
+
+    private async Task OnSearchChanged(string? search)
+    {
+        _searchTerm = search;
+        _pageNumber = 1;
+        await LoadDataAsync();
+    }
+
+    private async Task PreviousPage()
+    {
+        if (_pageNumber > 1)
+        {
+            _pageNumber--;
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task NextPage()
+    {
+        if (_pageNumber < Math.Ceiling(_totalCount / (double)_pageSize))
+        {
+            _pageNumber++;
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task MarkAsReadAsync(Guid id)
+    {
+        if (string.IsNullOrEmpty(_userId)) return;
+
+        var result = await NotificationService.MarkAsReadAsync(id, _userId);
+        if (result.Succeeded)
+        {
+            Snackbar.Add("Notifikasi ditandai sudah dibaca.", Severity.Success);
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task MarkAllAsReadAsync()
+    {
+        if (string.IsNullOrEmpty(_userId)) return;
+
+        var result = await NotificationService.MarkAllAsReadAsync(_userId, _userRole);
+        if (result.Succeeded)
+        {
+            Snackbar.Add("Semua notifikasi ditandai sudah dibaca.", Severity.Success);
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task OpenLink(NotificationDto notif)
+    {
+        if (string.IsNullOrEmpty(_userId)) return;
+
+        if (notif.Status == NotificationStatus.Unread)
+        {
+            await NotificationService.MarkAsReadAsync(notif.Id, _userId);
+        }
+
+        if (!string.IsNullOrEmpty(notif.LinkUrl))
+        {
+            Navigation.NavigateTo(notif.LinkUrl);
+        }
+    }
+
+    private static Color GetCategoryColor(NotificationCategory category) => category switch
+    {
+        NotificationCategory.StockAlert => Color.Warning,
+        NotificationCategory.PurchaseOrder => Color.Info,
+        NotificationCategory.Reconciliation => Color.Error,
+        NotificationCategory.SystemExport => Color.Success,
+        _ => Color.Primary
+    };
+
+    private static Color GetStatusColor(NotificationStatus status) => status switch
+    {
+        NotificationStatus.Unread => Color.Error,
+        NotificationStatus.Read => Color.Default,
+        NotificationStatus.Resolved => Color.Success,
+        _ => Color.Default
+    };
+
+    private static string GetStatusText(NotificationStatus status) => status switch
+    {
+        NotificationStatus.Unread => "Belum Dibaca",
+        NotificationStatus.Read => "Sudah Dibaca",
+        NotificationStatus.Resolved => "Selesai / Pulih",
+        _ => status.ToString()
+    };
+}

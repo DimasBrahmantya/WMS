@@ -52,3 +52,4 @@ public interface IStockTransferService
         string? reason,
         CancellationToken cancellationToken = default);
 }
+

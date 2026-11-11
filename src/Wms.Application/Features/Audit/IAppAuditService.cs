@@ -12,3 +12,4 @@ public interface IAppAuditService
         string? reason = null,
         CancellationToken cancellationToken = default);
 }
+

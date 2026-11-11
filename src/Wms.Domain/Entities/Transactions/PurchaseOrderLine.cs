@@ -20,3 +20,4 @@ public class PurchaseOrderLine
 
     public decimal RemainingQuantity => Math.Max(0, OrderedQuantity - ReceivedQuantity);
 }
+

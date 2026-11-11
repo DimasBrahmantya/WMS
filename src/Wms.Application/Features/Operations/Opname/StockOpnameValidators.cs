@@ -10,3 +10,4 @@ public class CreateStockOpnameSessionValidator : AbstractValidator<CreateStockOp
             .NotEmpty().WithMessage("Gudang opname wajib dipilih.");
     }
 }
+

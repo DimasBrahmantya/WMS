@@ -27,3 +27,4 @@ public class CreateStockTransferValidator : AbstractValidator<CreateStockTransfe
         });
     }
 }
+

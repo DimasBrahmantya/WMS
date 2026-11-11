@@ -6,6 +6,7 @@
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
 @inject IClock Clock
+@inject IDialogService DialogService
 
 <PageTitle>Laporan Stok Saat Ini - Warehouse Management System</PageTitle>
 
@@ -30,6 +31,10 @@
         <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.ReceiptLong"
                    Href="/reports/stock-card">
             Buka Kartu Stok
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FileDownload"
+                   OnClick="OpenExportDialog">
+            Ekspor Laporan
         </MudButton>
     </div>
 </div>
@@ -347,4 +352,52 @@
         "Rendah" => Color.Warning,
         _ => Color.Success
     };
+
+    private async Task OpenExportDialog()
+    {
+        var parameters = new DialogParameters<Dialogs.ExportDialog>
+        {
+            { x => x.ReportType, "StockReport" },
+            { x => x.ReportTitle, "Laporan Stok Saat Ini" },
+            { x => x.Headers, new List<string> { "SKU", "Barcode", "Nama Barang", "Kategori", "Gudang", "Lokasi Rak", "Fisik (On-Hand)", "Alokasi (Reserved)", "Tersedia (Available)", "Satuan", "Status" } },
+            { x => x.TotalRowCount, _summary?.TotalSkuCount ?? 100 },
+            { x => x.Metadata, new Dictionary<string, string>
+                {
+                    { "Status Filter", _query.StockStatus ?? "Semua" },
+                    { "Gudang", _availableWarehouses.FirstOrDefault(w => w.Id == _query.WarehouseId)?.Name ?? "Semua Gudang" }
+                }
+            },
+            { x => x.FetchRowsFunc, async () =>
+                {
+                    var exportQuery = new StockReportQuery
+                    {
+                        Page = 1,
+                        PageSize = 10000,
+                        WarehouseId = _query.WarehouseId,
+                        CategoryId = _query.CategoryId,
+                        StockStatus = _query.StockStatus,
+                        Search = _query.Search
+                    };
+                    var paged = await ReportService.GetCurrentStockReportAsync(exportQuery);
+                    return paged.Items.Select(item => (IReadOnlyList<object?>)new object?[]
+                    {
+                        item.Sku,
+                        item.Barcode ?? "-",
+                        item.ProductName,
+                        item.CategoryName,
+                        item.WarehouseName,
+                        item.LocationCode,
+                        item.OnHand,
+                        item.Reserved,
+                        item.Available,
+                        item.UnitName,
+                        item.Status
+                    }).ToList();
+                }
+            }
+        };
+
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        await DialogService.ShowAsync<Dialogs.ExportDialog>("Ekspor Laporan Stok", parameters, options);
+    }
 }

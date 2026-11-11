@@ -15,6 +15,7 @@
         
         <AuthorizeView>
             <Authorized>
+                <NotificationBell />
                 <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Class="mr-2">
                     @context.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
                 </MudChip>
