@@ -71,11 +71,11 @@ PO + approval + penerimaan parsial, retur, transfer antar-gudang (status `in_tra
 
 Background job (Hangfire atau Quartz.NET), notifikasi in-app dengan deduplikasi, ekspor CSV/XLSX/PDF mengikuti filter dan izin, laporan besar lewat streaming/job, ekspor tercatat di audit log.
 
-## Tahap 7 — Fitur lanjutan
+## Tahap 7 — Fitur lanjutan [SELESAI]
 
 Batch/lot + kedaluwarsa + FEFO, barcode/QR (input manual sebagai fallback), impor CSV/XLSX dengan preview dan validasi, putaway/picking, sales order + reservasi, REST API eksternal, backup/export data. Jangan mengklaim dukungan scanner atau email eksternal sebelum diuji.
 
-## Tahap 8 — Pengujian akhir dan dokumentasi
+## Tahap 8 — Pengujian akhir dan dokumentasi [SELESAI]
 
 Lengkapi test untuk: autentikasi dan RBAC, duplikasi SKU/barcode, barang masuk/keluar, penolakan stok negatif, idempotency, pembatalan/koreksi dengan ledger dan audit, penerimaan parsial PO, transfer tanpa duplikasi, opname dan approval, valuasi rata-rata, filter dan ekspor laporan, pembatasan akses antar-gudang, state loading/empty/error/success. Dokumentasikan instalasi, env, seed, role, workflow, batasan, dan deployment (termasuk batas paket Supabase dan backup).
 

@@ -98,3 +98,4 @@ public class ExcelReportFormatter : IReportFormatter
         return stream.ToArray();
     }
 }
+

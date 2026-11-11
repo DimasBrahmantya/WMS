@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -204,7 +204,7 @@ namespace Wms.Infrastructure.Persistence.Migrations
                 table: "products",
                 column: "Barcode",
                 unique: true,
-                filter: "\"barcode\" IS NOT NULL");
+                filter: "\"Barcode\" IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_products_CategoryId",

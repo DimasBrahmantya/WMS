@@ -42,3 +42,4 @@ public class UnreadNotificationSummaryDto
     public int TotalUnread { get; set; }
     public List<NotificationDto> RecentNotifications { get; set; } = new();
 }
+

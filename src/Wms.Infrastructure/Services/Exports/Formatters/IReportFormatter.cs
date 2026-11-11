@@ -9,3 +9,4 @@ public interface IReportFormatter
     string FileExtension { get; }
     byte[] Format(string title, IReadOnlyList<string> headers, IReadOnlyList<IReadOnlyList<object?>> rows, IReadOnlyDictionary<string, string>? metadata = null);
 }
+

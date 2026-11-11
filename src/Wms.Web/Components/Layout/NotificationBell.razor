@@ -1,7 +1,8 @@
 @using System.Security.Claims
+@using Microsoft.Extensions.DependencyInjection
 @using Wms.Application.Features.Notifications
 @using Wms.Domain.Enums
-@inject INotificationService NotificationService
+@inject IServiceScopeFactory ScopeFactory
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
@@ -102,16 +103,34 @@
     {
         if (string.IsNullOrEmpty(_userId)) return;
 
-        var summary = await NotificationService.GetUnreadSummaryAsync(_userId, _userRole, 5);
-        _unreadCount = summary.TotalUnread;
-        _recentNotifications = summary.RecentNotifications;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+            var summary = await notificationService.GetUnreadSummaryAsync(_userId, _userRole, 5);
+            _unreadCount = summary.TotalUnread;
+            _recentNotifications = summary.RecentNotifications;
+        }
+        catch
+        {
+            // Suppress error in background notification bell to prevent breaking layout rendering
+        }
     }
 
     private async Task OpenNotification(NotificationDto notif)
     {
         if (string.IsNullOrEmpty(_userId)) return;
 
-        await NotificationService.MarkAsReadAsync(notif.Id, _userId);
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+            await notificationService.MarkAsReadAsync(notif.Id, _userId);
+        }
+        catch
+        {
+        }
+
         await LoadNotificationsAsync();
 
         if (!string.IsNullOrEmpty(notif.LinkUrl))
@@ -124,9 +143,18 @@
     {
         if (string.IsNullOrEmpty(_userId)) return;
 
-        await NotificationService.MarkAllAsReadAsync(_userId, _userRole);
-        await LoadNotificationsAsync();
-        Snackbar.Add("Semua notifikasi telah ditandai sudah dibaca.", Severity.Success);
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+            await notificationService.MarkAllAsReadAsync(_userId, _userRole);
+            await LoadNotificationsAsync();
+            Snackbar.Add("Semua notifikasi telah ditandai sudah dibaca.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal memperbarui notifikasi: {ex.Message}", Severity.Error);
+        }
     }
 
     private static Color GetCategoryColor(NotificationCategory category) => category switch

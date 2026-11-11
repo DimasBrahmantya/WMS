@@ -58,6 +58,17 @@ public static class Permissions
     public const string AuditView = "audit.view";
     public const string SettingsManage = "settings.manage";
 
+    // Tahap 7 — Fitur Lanjutan
+    public const string BatchView = "batch.view";
+    public const string BatchManage = "batch.manage";
+    public const string SalesOrderView = "salesorder.view";
+    public const string SalesOrderCreate = "salesorder.create";
+    public const string SalesOrderApprove = "salesorder.approve";
+    public const string SalesOrderPost = "salesorder.post";
+    public const string ImportManage = "import.manage";
+    public const string ApiKeysManage = "api.keys.manage";
+    public const string SystemBackup = "system.backup";
+
     public static IReadOnlyList<string> All => new[]
     {
         UsersView, UsersCreate, UsersEdit, UsersDelete, RolesView, RolesEdit,
@@ -70,6 +81,8 @@ public static class Permissions
         StockOpnameView, StockOpnameManage, StockOpnameApprove,
         StockIncidentView, StockIncidentManage, StockIncidentApprove,
         StockReturnView, StockReturnCreate, StockReturnApprove,
-        ReportsView, ReportsExport, AuditView, SettingsManage
+        ReportsView, ReportsExport, AuditView, SettingsManage,
+        BatchView, BatchManage, SalesOrderView, SalesOrderCreate, SalesOrderApprove, SalesOrderPost,
+        ImportManage, ApiKeysManage, SystemBackup
     };
 }

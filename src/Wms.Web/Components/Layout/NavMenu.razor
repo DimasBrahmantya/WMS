@@ -26,12 +26,17 @@
         <Authorized>
             <MudText Typo="Typo.subtitle2" Class="px-4 pt-4 pb-1 text-muted font-weight-bold">ADMINISTRASI</MudText>
             <MudNavLink Href="/admin/users" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ManageAccounts">Pengguna & Hak Akses</MudNavLink>
+            <MudNavLink Href="/admin/api-keys" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.VpnKey">Kunci REST API</MudNavLink>
+            <MudNavLink Href="/admin/backup" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Backup">Cadangan Sistem</MudNavLink>
             <MudNavLink Href="/admin/settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings">Pengaturan Sistem</MudNavLink>
         </Authorized>
     </AuthorizeView>
 
     <MudText Typo="Typo.subtitle2" Class="px-4 pt-4 pb-1 text-muted font-weight-bold">WORKFLOW OPERASIONAL (FASE 2)</MudText>
+    <MudNavLink Href="/sales-orders" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ShoppingCart">Sales Order & Reservasi</MudNavLink>
     <MudNavLink Href="/operations/purchase-orders" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Assignment">Purchase Order (PO)</MudNavLink>
+    <MudNavLink Href="/batches" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Layers">Batch & Kedaluwarsa</MudNavLink>
+    <MudNavLink Href="/imports" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.FileUpload">Impor CSV / Excel</MudNavLink>
     <MudNavLink Href="/operations/transfers" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.SwapHoriz">Transfer Antar-Gudang</MudNavLink>
     <MudNavLink Href="/operations/opname" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.FactCheck">Stock Opname</MudNavLink>
     <MudNavLink Href="/operations/incidents" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ReportProblem">Barang Hilang / Rusak</MudNavLink>

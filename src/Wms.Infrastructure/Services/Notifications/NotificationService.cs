@@ -218,3 +218,4 @@ public class NotificationService : INotificationService
             (n.UserId == null && (n.TargetRole == null || n.TargetRole == userRole || userRole == "SuperAdmin")));
     }
 }
+

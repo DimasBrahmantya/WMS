@@ -11,3 +11,4 @@ public interface INotificationService
     Task<PaginatedList<NotificationDto>> GetUserNotificationsAsync(NotificationFilterRequest filter, string userId, string? userRole = null, CancellationToken cancellationToken = default);
     Task<UnreadNotificationSummaryDto> GetUnreadSummaryAsync(string userId, string? userRole = null, int recentCount = 5, CancellationToken cancellationToken = default);
 }
+

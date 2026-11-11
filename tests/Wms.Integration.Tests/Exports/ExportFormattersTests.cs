@@ -110,3 +110,4 @@ public class ExportFormattersTests
         auditLogs.Should().ContainSingle(a => a.Action == "Export" && a.EntityType == "Report");
     }
 }
+

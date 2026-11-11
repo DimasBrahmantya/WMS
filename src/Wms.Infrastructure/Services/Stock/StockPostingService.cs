@@ -449,6 +449,28 @@ public class StockPostingService : IStockPostingService
 
                         foreach (var line in orderedLines)
                         {
+                            // 0. Periksa validitas Batch (blokir expired & blocked batch dari pengeluaran normal)
+                            if (!string.IsNullOrWhiteSpace(line.BatchNumber))
+                            {
+                                var batch = await _dbContext.Batches
+                                    .FirstOrDefaultAsync(b => b.ProductId == line.ProductId && b.BatchNumber == line.BatchNumber, cancellationToken);
+
+                                if (batch != null)
+                                {
+                                    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                                    if (batch.IsBlocked)
+                                    {
+                                        await transaction.RollbackAsync(cancellationToken);
+                                        return Result<Guid>.Failure($"Batch '{line.BatchNumber}' sedang diblokir: {batch.BlockReason ?? "Pemeriksaan kualitas"}.");
+                                    }
+                                    if (batch.IsExpired(today) && stockOut.IssueType != StockOutType.Disposal)
+                                    {
+                                        await transaction.RollbackAsync(cancellationToken);
+                                        return Result<Guid>.Failure($"Batch '{line.BatchNumber}' sudah kedaluwarsa pada {batch.ExpiryDate:yyyy-MM-dd} dan diblokir dari pengeluaran biasa.");
+                                    }
+                                }
+                            }
+
                             // 1. Periksa ketersediaan stok
                             var balance = await _dbContext.InventoryBalances
                                 .FirstOrDefaultAsync(b =>

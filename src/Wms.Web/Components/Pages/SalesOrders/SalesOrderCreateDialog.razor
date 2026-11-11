@@ -1,0 +1,220 @@
+@rendermode InteractiveServer
+@inject Wms.Application.Features.SalesOrders.ISalesOrderService SalesOrderService
+@inject Wms.Application.Common.Interfaces.IWmsDbContext DbContext
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+@using Microsoft.EntityFrameworkCore
+
+<MudDialog>
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center">
+            <MudIcon Icon="@Icons.Material.Filled.AddShoppingCart" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Buat Sales Order Baru</MudText>
+        </MudStack>
+    </TitleContent>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid" Label="Pelanggan" @bind-Value="_customerId" Required="true" Variant="Variant.Outlined">
+                    @foreach (var c in _customers)
+                    {
+                        <MudSelectItem Value="@c.Id">@c.Name (@c.Code)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid" Label="Gudang Sumber" @bind-Value="_warehouseId" Required="true" Variant="Variant.Outlined">
+                    @foreach (var w in _warehouses)
+                    {
+                        <MudSelectItem Value="@w.Id">@w.Name (@w.Code)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudDatePicker Label="Target Pengiriman" @bind-Date="_deliveryDate" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_notes" Label="Catatan Pesanan" Variant="Variant.Outlined" />
+            </MudItem>
+        </MudGrid>
+
+        <MudDivider Class="my-4" />
+
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+            <MudText Typo="Typo.subtitle2" Class="font-weight-bold">Daftar Barang Pesanan</MudText>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="AddLine">
+                Tambah Baris
+            </MudButton>
+        </MudStack>
+
+        <MudTable Items="@_lines" Dense="true" Hover="true">
+            <HeaderContent>
+                <MudTh>Produk</MudTh>
+                <MudTh>Jumlah</MudTh>
+                <MudTh>Harga Satuan (Rp)</MudTh>
+                <MudTh>Subtotal (Rp)</MudTh>
+                <MudTh>Aksi</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <MudSelect T="Guid" @bind-Value="context.ProductId" Dense="true" Margin="Margin.Dense">
+                        @foreach (var p in _products)
+                        {
+                            <MudSelectItem Value="@p.Id">@p.Name (@p.Sku)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd>
+                    <MudNumericField T="decimal" @bind-Value="context.Quantity" Min="1" Margin="Margin.Dense" />
+                </MudTd>
+                <MudTd>
+                    <MudNumericField T="decimal" @bind-Value="context.UnitPrice" Min="0" Margin="Margin.Dense" />
+                </MudTd>
+                <MudTd>
+                    @((context.Quantity * context.UnitPrice).ToString("N0"))
+                </MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => RemoveLine(context))" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-3">
+            <MudText Typo="Typo.subtitle1" Class="font-weight-bold">
+                Total Nilai: Rp @_lines.Sum(l => l.Quantity * l.UnitPrice).ToString("N0")
+            </MudText>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="Cancel">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_saving" OnClick="SaveOrderAsync">
+            @if (_saving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Menyimpan...</span>
+            }
+            else
+            {
+                <span>Simpan Pesanan (Draft)</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private MudDialogInstance MudDialog { get; set; } = default!;
+
+    private Guid _customerId;
+    private Guid _warehouseId;
+    private DateTime? _deliveryDate = DateTime.Today.AddDays(3);
+    private string? _notes;
+    private bool _saving = false;
+
+    private List<Wms.Domain.Entities.Master.Customer> _customers = new();
+    private List<Wms.Domain.Entities.Master.Warehouse> _warehouses = new();
+    private List<Wms.Domain.Entities.Master.Product> _products = new();
+
+    private class OrderLineVm
+    {
+        public Guid ProductId { get; set; }
+        public decimal Quantity { get; set; } = 1;
+        public decimal UnitPrice { get; set; } = 0;
+    }
+
+    private List<OrderLineVm> _lines = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _customers = await DbContext.Customers.Where(c => c.IsActive).OrderBy(c => c.Name).ToListAsync();
+        _warehouses = await DbContext.Warehouses.Where(w => w.IsActive).OrderBy(w => w.Name).ToListAsync();
+        _products = await DbContext.Products.Where(p => p.IsActive).OrderBy(p => p.Name).ToListAsync();
+
+        if (_customers.Any()) _customerId = _customers.First().Id;
+        if (_warehouses.Any()) _warehouseId = _warehouses.First().Id;
+
+        AddLine();
+    }
+
+    private void AddLine()
+    {
+        var defaultProduct = _products.FirstOrDefault();
+        _lines.Add(new OrderLineVm
+        {
+            ProductId = defaultProduct?.Id ?? Guid.Empty,
+            Quantity = 1,
+            UnitPrice = 0
+        });
+    }
+
+    private void RemoveLine(OrderLineVm line)
+    {
+        if (_lines.Count > 1)
+        {
+            _lines.Remove(line);
+        }
+        else
+        {
+            Snackbar.Add("Pesanan harus memiliki minimal 1 baris item.", Severity.Warning);
+        }
+    }
+
+    private async Task SaveOrderAsync()
+    {
+        if (_customerId == Guid.Empty || _warehouseId == Guid.Empty)
+        {
+            Snackbar.Add("Pilih pelanggan dan gudang terlebih dahulu.", Severity.Warning);
+            return;
+        }
+
+        if (_lines.Count == 0 || _lines.Any(l => l.ProductId == Guid.Empty || l.Quantity <= 0))
+        {
+            Snackbar.Add("Pastikan semua baris pesanan memiliki produk dan jumlah valid.", Severity.Warning);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userIdClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var userId = Guid.TryParse(userIdClaim, out var parsedId) ? parsedId : Guid.NewGuid();
+
+            var cmd = new Wms.Application.Features.SalesOrders.CreateSalesOrderCommand
+            {
+                CustomerId = _customerId,
+                WarehouseId = _warehouseId,
+                OrderDate = DateTime.UtcNow,
+                DeliveryDate = _deliveryDate.HasValue ? DateTime.SpecifyKind(_deliveryDate.Value, DateTimeKind.Utc) : null,
+                Notes = _notes,
+                Lines = _lines.Select(l => new Wms.Application.Features.SalesOrders.CreateSalesOrderLineCommand
+                {
+                    ProductId = l.ProductId,
+                    OrderedQuantity = l.Quantity,
+                    UnitPrice = l.UnitPrice
+                }).ToList()
+            };
+
+            var result = await SalesOrderService.CreateSalesOrderAsync(cmd, userId);
+            if (result.Succeeded && result.Data != null)
+            {
+                Snackbar.Add($"Sales Order {result.Data.OrderNumber} berhasil dibuat.", Severity.Success);
+                MudDialog.Close(DialogResult.Ok(result.Data));
+            }
+            else
+            {
+                Snackbar.Add($"Gagal membuat pesanan: {result.ErrorMessage}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal membuat pesanan: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

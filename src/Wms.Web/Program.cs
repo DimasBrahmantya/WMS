@@ -37,6 +37,10 @@ try
     builder.Services.AddMudServices();
 
     // Authentication & Cookie Policy
+    builder.Services.AddAuthentication()
+        .AddScheme<Wms.Web.Authentication.ApiKeyAuthenticationOptions, Wms.Web.Authentication.ApiKeyAuthenticationHandler>(
+            Wms.Web.Authentication.ApiKeyAuthenticationOptions.SchemeName, _ => { });
+
     builder.Services.ConfigureApplicationCookie(options =>
     {
         options.Cookie.HttpOnly = true;

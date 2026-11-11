@@ -30,6 +30,7 @@ public static class DependencyInjection
             options.UseNpgsql(connectionString, npgsqlOptions =>
             {
                 npgsqlOptions.MigrationsAssembly(typeof(WmsDbContext).Assembly.FullName);
+                npgsqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "wms");
                 npgsqlOptions.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorCodesToAdd: null);
             });
             options.AddInterceptors(auditInterceptor);
@@ -94,6 +95,17 @@ public static class DependencyInjection
         services.AddSingleton<Services.Exports.Formatters.IReportFormatter, Services.Exports.Formatters.ExcelReportFormatter>();
         services.AddSingleton<Services.Exports.Formatters.IReportFormatter, Services.Exports.Formatters.PdfReportFormatter>();
         services.AddScoped<Wms.Application.Features.Exports.IExportService, Services.Exports.ExportService>();
+
+        // Fitur Lanjutan (Tahap 7)
+        services.AddScoped<Wms.Application.Features.Batches.IBatchService, Services.Batches.BatchService>();
+        services.AddScoped<Wms.Application.Features.Batches.IFefoService, Services.Batches.FefoService>();
+        services.AddSingleton<Wms.Application.Features.Barcode.IBarcodeService, Services.Barcode.SvgBarcodeService>();
+        services.AddScoped<Wms.Application.Features.WarehouseOperations.IPutawayService, Services.WarehouseOperations.PutawayService>();
+        services.AddScoped<Wms.Application.Features.WarehouseOperations.IPickingService, Services.WarehouseOperations.PickingService>();
+        services.AddScoped<Wms.Application.Features.SalesOrders.ISalesOrderService, Services.SalesOrders.SalesOrderService>();
+        services.AddScoped<Wms.Application.Features.Imports.IDataImportService, Services.Imports.DataImportService>();
+        services.AddScoped<Wms.Application.Features.ApiKeys.IApiKeyService, Services.ApiKeys.ApiKeyService>();
+        services.AddScoped<Wms.Application.Features.Backup.ISystemBackupService, Services.Backup.SystemBackupService>();
 
         // Background Job Scheduler (Quartz.NET)
         services.AddQuartz(q =>

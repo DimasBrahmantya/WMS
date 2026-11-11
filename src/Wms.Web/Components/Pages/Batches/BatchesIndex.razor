@@ -1,0 +1,228 @@
+@page "/batches"
+@attribute [Authorize(Policy = "Permissions.BatchView")]
+@rendermode InteractiveServer
+@inject Wms.Application.Features.Batches.IBatchService BatchService
+@inject Wms.Application.Features.Barcode.IBarcodeService BarcodeService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Manajemen Batch & Kedaluwarsa - WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Batch & Masa Kedaluwarsa (FEFO)</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Pemantauan batch/lot, tanggal kedaluwarsa, dan kontrol pemblokiran pengeluaran stok secara terpadu.
+            </MudText>
+        </div>
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadDataAsync">
+                Muat Ulang
+            </MudButton>
+        </MudStack>
+    </MudStack>
+
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="4">
+            <MudPaper Class="pa-4 d-flex align-center" Elevation="1">
+                <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Large" Class="mr-3" />
+                <div>
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Hampir Kedaluwarsa (&le; 30 Hari)</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">@_batches.Count(b => b.IsNearExpiry) Batch</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudPaper Class="pa-4 d-flex align-center" Elevation="1">
+                <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Size="Size.Large" Class="mr-3" />
+                <div>
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Sudah Kedaluwarsa</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">@_batches.Count(b => b.IsExpired) Batch</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudPaper Class="pa-4 d-flex align-center" Elevation="1">
+                <MudIcon Icon="@Icons.Material.Filled.Block" Color="Color.Dark" Size="Size.Large" Class="mr-3" />
+                <div>
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Batch Diblokir Manual</MudText>
+                    <MudText Typo="Typo.h6" Class="font-weight-bold">@_batches.Count(b => b.IsBlocked) Batch</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Elevation="1" Class="pa-4">
+        <MudTextField @bind-Value="_searchQuery" Placeholder="Cari nomor batch, SKU, atau nama produk..."
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true" Class="mb-4" />
+
+        <MudTable Items="@FilteredBatches" Hover="true" Striped="true" Loading="@_loading" Dense="true">
+            <HeaderContent>
+                <MudTh>Nomor Batch</MudTh>
+                <MudTh>Produk</MudTh>
+                <MudTh>Tgl Manufaktur</MudTh>
+                <MudTh>Tgl Kedaluwarsa</MudTh>
+                <MudTh>Sisa Hari</MudTh>
+                <MudTh>Stok (Tersedia / Fisik)</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Aksi</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Nomor Batch">
+                    <MudText Typo="Typo.body2" Class="font-weight-bold">@context.BatchNumber</MudText>
+                </MudTd>
+                <MudTd DataLabel="Produk">
+                    <MudText Typo="Typo.body2">@context.ProductName</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">SKU: @context.ProductSku</MudText>
+                </MudTd>
+                <MudTd DataLabel="Tgl Manufaktur">
+                    @(context.ManufactureDate.HasValue ? context.ManufactureDate.Value.ToString("dd MMM yyyy") : "-")
+                </MudTd>
+                <MudTd DataLabel="Tgl Kedaluwarsa">
+                    @(context.ExpiryDate.HasValue ? context.ExpiryDate.Value.ToString("dd MMM yyyy") : "-")
+                </MudTd>
+                <MudTd DataLabel="Sisa Hari">
+                    @if (context.DaysToExpiry.HasValue)
+                    {
+                        var days = context.DaysToExpiry.Value;
+                        if (days < 0)
+                        {
+                            <MudChip T="string" Color="Color.Error" Size="Size.Small">Kedaluwarsa (@Math.Abs(days) hr lalu)</MudChip>
+                        }
+                        else if (days <= 30)
+                        {
+                            <MudChip T="string" Color="Color.Warning" Size="Size.Small">@days hari</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small">@days hari</MudChip>
+                        }
+                    }
+                    else
+                    {
+                        <span>-</span>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Stok">
+                    <MudText Typo="Typo.body2">@context.AvailableQuantity / @context.TotalOnHand</MudText>
+                </MudTd>
+                <MudTd DataLabel="Status">
+                    @if (context.IsBlocked)
+                    {
+                        <MudChip T="string" Color="Color.Dark" Size="Size.Small" Icon="@Icons.Material.Filled.Block">Diblokir</MudChip>
+                    }
+                    else if (context.IsExpired)
+                    {
+                        <MudChip T="string" Color="Color.Error" Size="Size.Small">Expired</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Color="Color.Success" Size="Size.Small">Aktif</MudChip>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Aksi">
+                    <MudStack Row="true" Spacing="1">
+                        <MudIconButton Icon="@Icons.Material.Filled.QrCode2" Size="Size.Small" aria-label="Lihat Barcode & QR"
+                                       OnClick="@(() => ShowBarcode(context))" />
+                        <AuthorizeView Policy="Permissions.BatchManage">
+                            <Authorized Context="authContext">
+                                <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                                           Color="@(context.IsBlocked ? Color.Success : Color.Error)"
+                                           OnClick="@(() => ToggleBlockAsync(context))">
+                                    @(context.IsBlocked ? "Buka Blokir" : "Blokir")
+                                </MudButton>
+                            </Authorized>
+                        </AuthorizeView>
+                    </MudStack>
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="new int[] { 10, 25, 50 }" />
+            </PagerContent>
+        </MudTable>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private List<Wms.Application.Features.Batches.BatchDto> _batches = new();
+    private string _searchQuery = string.Empty;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var paged = await BatchService.GetBatchesPagedAsync(new Wms.Application.Features.Batches.GetBatchesQuery
+            {
+                PageNumber = 1,
+                PageSize = 200
+            });
+            _batches = paged.Items.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal memuat data batch: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private IEnumerable<Wms.Application.Features.Batches.BatchDto> FilteredBatches =>
+        string.IsNullOrWhiteSpace(_searchQuery)
+            ? _batches
+            : _batches.Where(b => b.BatchNumber.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)
+                               || b.ProductName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)
+                               || b.ProductSku.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase));
+
+    private async Task ToggleBlockAsync(Wms.Application.Features.Batches.BatchDto batch)
+    {
+        var newStatus = !batch.IsBlocked;
+        var confirmText = newStatus ? "blokir" : "buka blokir";
+        var result = await DialogService.ShowMessageBox(
+            "Konfirmasi",
+            $"Apakah Anda yakin ingin me-{confirmText} batch {batch.BatchNumber}?",
+            yesText: "Ya", cancelText: "Batal");
+
+        if (result == true)
+        {
+            var res = await BatchService.SetBlockStatusAsync(new Wms.Application.Features.Batches.UpdateBatchBlockStatusCommand
+            {
+                BatchId = batch.Id,
+                IsBlocked = newStatus,
+                BlockReason = newStatus ? "Diblokir manual dari UI" : null
+            });
+
+            if (res.Succeeded)
+            {
+                Snackbar.Add($"Status batch {batch.BatchNumber} berhasil diperbarui.", Severity.Success);
+                await LoadDataAsync();
+            }
+            else
+            {
+                Snackbar.Add($"Gagal memperbarui status: {res.ErrorMessage}", Severity.Error);
+            }
+        }
+    }
+
+    private void ShowBarcode(Wms.Application.Features.Batches.BatchDto batch)
+    {
+        var parameters = new DialogParameters
+        {
+            { "Title", $"Barcode & QR - Batch {batch.BatchNumber}" },
+            { "Code", batch.BatchNumber },
+            { "Subtitle", $"{batch.ProductSku} - {batch.ProductName}" }
+        };
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        DialogService.Show<Wms.Web.Components.Common.BarcodeDisplayDialog>("Barcode", parameters, options);
+    }
+}

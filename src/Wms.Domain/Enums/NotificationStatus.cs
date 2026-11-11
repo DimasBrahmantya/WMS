@@ -6,3 +6,4 @@ public enum NotificationStatus
     Read = 2,
     Resolved = 3
 }
+

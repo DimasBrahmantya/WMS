@@ -1,0 +1,340 @@
+@page "/imports"
+@attribute [Authorize(Policy = "Permissions.ImportManage")]
+@rendermode InteractiveServer
+@inject Wms.Application.Features.Imports.IDataImportService ImportService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Impor Data Massal (CSV / Excel) - WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudText Typo="Typo.h5" Class="font-weight-bold mb-1">Impor Data Massal (CSV & Excel XLSX)</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+        Impor data master produk dan saldo stok awal dengan validasi baris demi baris, pratinjau sebelum commit, dan transaksi atomik.
+    </MudText>
+
+    <MudPaper Class="pa-6" Elevation="1">
+        <MudStepper NonLinear="false" @bind-ActiveIndex="_activeStep">
+            <!-- Langkah 1: Unggah Berkas & Pilih Tipe Data -->
+            <MudStep Title="Unggah Berkas">
+                <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-3">Pilih Tipe Data & Unggah File</MudText>
+                
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="Wms.Application.Features.Imports.ImportType" @bind-Value="_importType" Label="Tipe Data yang Diimpor" Variant="Variant.Outlined" Class="mb-4">
+                            <MudSelectItem Value="Wms.Application.Features.Imports.ImportType.Products">Master Produk (SKU, Nama, Kategori, Satuan)</MudSelectItem>
+                            <MudSelectItem Value="Wms.Application.Features.Imports.ImportType.InitialStock">Saldo Stok Awal (SKU, Gudang, Lokasi, Kuantitas, Biaya)</MudSelectItem>
+                        </MudSelect>
+
+                        <MudFileUpload T="IBrowserFile" FilesChanged="OnFileSelected" Accept=".csv, .xlsx">
+                            <ActivatorContent>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
+                                    Pilih Berkas CSV / XLSX
+                                </MudButton>
+                            </ActivatorContent>
+                        </MudFileUpload>
+
+                        @if (_selectedFile != null)
+                        {
+                            <MudAlert Severity="Severity.Info" Class="mt-3">
+                                File terpilih: <strong>@_selectedFile.Name</strong> (@((_selectedFile.Size / 1024.0).ToString("N1")) KB)
+                            </MudAlert>
+                        }
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudPaper Outlined="true" Class="pa-4 bg-light">
+                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">Panduan Format Kolom Header:</MudText>
+                            @if (_importType == Wms.Application.Features.Imports.ImportType.Products)
+                            {
+                                <MudText Typo="Typo.body2">Wajib: <code>SKU, Name, Category, Unit</code></MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Opsional: Barcode, Brand, MinStock, MaxStock, TrackingMethod (None/Batch/Serial)</MudText>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2">Wajib: <code>WarehouseCode, SKU, LocationCode, Quantity, UnitCost</code></MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Opsional: BatchNumber, ExpiryDate (format YYYY-MM-DD)</MudText>
+                            }
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+
+                <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-6">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_selectedFile == null || _isValidating)" OnClick="ValidateFileAsync">
+                        @if (_isValidating)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            <span>Memvalidasi Berkas...</span>
+                        }
+                        else
+                        {
+                            <span>Validasi & Lanjut ke Pratinjau</span>
+                        }
+                    </MudButton>
+                </MudStack>
+            </MudStep>
+
+            <!-- Langkah 2: Pratinjau & Validasi -->
+            <MudStep Title="Pratinjau & Validasi">
+                @if (_validationResult != null)
+                {
+                    <MudStack Row="true" Spacing="4" Class="mb-4">
+                        <MudPaper Class="pa-3 flex-grow-1" Elevation="0" Outlined="true">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Total Baris</MudText>
+                            <MudText Typo="Typo.h6">@_validationResult.TotalRows</MudText>
+                        </MudPaper>
+                        <MudPaper Class="pa-3 flex-grow-1" Elevation="0" Outlined="true">
+                            <MudText Typo="Typo.caption" Color="Color.Success">Baris Valid</MudText>
+                            <MudText Typo="Typo.h6" Color="Color.Success">@_validationResult.ValidRowsCount</MudText>
+                        </MudPaper>
+                        <MudPaper Class="pa-3 flex-grow-1" Elevation="0" Outlined="true">
+                            <MudText Typo="Typo.caption" Color="Color.Error">Baris Gagal</MudText>
+                            <MudText Typo="Typo.h6" Color="Color.Error">@_validationResult.ErrorRowsCount</MudText>
+                        </MudPaper>
+                    </MudStack>
+
+                    @if (_validationResult.Errors.Any())
+                    {
+                        <MudAlert Severity="Severity.Error" Class="mb-4">
+                            Terdapat @_validationResult.Errors.Count kesalahan validasi. Seluruh baris harus valid sebelum commit dapat dilakukan.
+                        </MudAlert>
+
+                        <MudTable Items="@_validationResult.Errors" Dense="true" Hover="true" Class="mb-4">
+                            <HeaderContent>
+                                <MudTh>Baris</MudTh>
+                                <MudTh>Identifier</MudTh>
+                                <MudTh>Kolom</MudTh>
+                                <MudTh>Pesan Kesalahan</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>Baris @context.RowNumber</MudTd>
+                                <MudTd><strong>@context.Identifier</strong></MudTd>
+                                <MudTd>@context.Field</MudTd>
+                                <MudTd><MudText Color="Color.Error">@context.ErrorMessage</MudText></MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mb-4">
+                            Semua @_validationResult.ValidRowsCount baris data valid dan siap disimpan ke sistem secara atomik.
+                        </MudAlert>
+                    }
+
+                    @if (_importType == Wms.Application.Features.Imports.ImportType.Products)
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">Cuplikan Data Produk:</MudText>
+                        <MudTable Items="@_validationResult.ProductRows" Dense="true" Hover="true" Striped="true">
+                            <HeaderContent>
+                                <MudTh># Baris</MudTh>
+                                <MudTh>SKU</MudTh>
+                                <MudTh>Nama Produk</MudTh>
+                                <MudTh>Kategori</MudTh>
+                                <MudTh>Satuan</MudTh>
+                                <MudTh>Status</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.RowNumber</MudTd>
+                                <MudTd><strong>@context.Sku</strong></MudTd>
+                                <MudTd>@context.Name</MudTd>
+                                <MudTd>@context.CategoryName</MudTd>
+                                <MudTd>@context.UnitName</MudTd>
+                                <MudTd>
+                                    @if (context.IsValid)
+                                    {
+                                        <MudChip T="string" Color="Color.Success" Size="Size.Small">Valid</MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Color="Color.Error" Size="Size.Small">Gagal: @context.ErrorMessage</MudChip>
+                                    }
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">Cuplikan Saldo Stok Awal:</MudText>
+                        <MudTable Items="@_validationResult.StockRows" Dense="true" Hover="true" Striped="true">
+                            <HeaderContent>
+                                <MudTh># Baris</MudTh>
+                                <MudTh>Gudang</MudTh>
+                                <MudTh>SKU</MudTh>
+                                <MudTh>Lokasi Rak</MudTh>
+                                <MudTh>Jumlah</MudTh>
+                                <MudTh>Harga Satuan</MudTh>
+                                <MudTh>Batch</MudTh>
+                                <MudTh>Status</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.RowNumber</MudTd>
+                                <MudTd>@context.WarehouseCode</MudTd>
+                                <MudTd><strong>@context.Sku</strong></MudTd>
+                                <MudTd>@context.LocationCode</MudTd>
+                                <MudTd>@context.Quantity</MudTd>
+                                <MudTd>Rp @context.UnitCost.ToString("N0")</MudTd>
+                                <MudTd>@(context.BatchNumber ?? "-")</MudTd>
+                                <MudTd>
+                                    @if (context.IsValid)
+                                    {
+                                        <MudChip T="string" Color="Color.Success" Size="Size.Small">Valid</MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Color="Color.Error" Size="Size.Small">Gagal: @context.ErrorMessage</MudChip>
+                                    }
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                }
+
+                <MudStack Row="true" Justify="Justify.SpaceBetween" Class="mt-6">
+                    <MudButton Variant="Variant.Outlined" OnClick="@(() => _activeStep = 0)">Kembali</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Success"
+                               Disabled="@(_validationResult == null || !_validationResult.CanCommit || _isCommitting)"
+                               OnClick="CommitImportAsync">
+                        @if (_isCommitting)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            <span>Menyimpan ke Database...</span>
+                        }
+                        else
+                        {
+                            <span>Commit Impor Transaksional</span>
+                        }
+                    </MudButton>
+                </MudStack>
+            </MudStep>
+
+            <!-- Langkah 3: Selesai -->
+            <MudStep Title="Selesai">
+                @if (_executionResult != null)
+                {
+                    <div class="text-center pa-6">
+                        @if (_executionResult.Success)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Style="font-size: 4rem;" Class="mb-3" />
+                            <MudText Typo="Typo.h5" Class="font-weight-bold mb-2">Impor Berhasil Disimpan!</MudText>
+                            <MudText Typo="Typo.body1" Class="mb-4">
+                                Sebanyak <strong>@_executionResult.ImportedCount</strong> entri berhasil disimpan secara atomik ke database.
+                            </MudText>
+                        }
+                        else
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Style="font-size: 4rem;" Class="mb-3" />
+                            <MudText Typo="Typo.h5" Class="font-weight-bold mb-2">Impor Gagal</MudText>
+                            <MudText Typo="Typo.body1" Color="Color.Error" Class="mb-4">
+                                @_executionResult.Message
+                            </MudText>
+                        }
+
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ResetWizard">
+                            Mulai Impor Baru
+                        </MudButton>
+                    </div>
+                }
+            </MudStep>
+        </MudStepper>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private int _activeStep = 0;
+    private Wms.Application.Features.Imports.ImportType _importType = Wms.Application.Features.Imports.ImportType.Products;
+    private IBrowserFile? _selectedFile;
+    private byte[]? _fileBytes;
+    private bool _isValidating = false;
+    private bool _isCommitting = false;
+    private Wms.Application.Features.Imports.ImportValidationResultDto? _validationResult;
+    private Wms.Application.Features.Imports.ImportExecutionResultDto? _executionResult;
+
+    private async Task OnFileSelected(IBrowserFile file)
+    {
+        _selectedFile = file;
+        using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+        using var memoryStream = new MemoryStream();
+        await stream.CopyToAsync(memoryStream);
+        _fileBytes = memoryStream.ToArray();
+    }
+
+    private async Task ValidateFileAsync()
+    {
+        if (_fileBytes == null || _selectedFile == null) return;
+
+        _isValidating = true;
+        try
+        {
+            var ext = Path.GetExtension(_selectedFile.Name);
+            using var stream = new MemoryStream(_fileBytes);
+
+            if (_importType == Wms.Application.Features.Imports.ImportType.Products)
+            {
+                _validationResult = await ImportService.ValidateProductImportAsync(stream, ext);
+            }
+            else
+            {
+                _validationResult = await ImportService.ValidateInitialStockImportAsync(stream, ext);
+            }
+
+            _activeStep = 1;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal memvalidasi berkas: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isValidating = false;
+        }
+    }
+
+    private async Task CommitImportAsync()
+    {
+        if (_validationResult == null || !_validationResult.CanCommit) return;
+
+        _isCommitting = true;
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userIdClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var userId = Guid.TryParse(userIdClaim, out var parsedId) ? parsedId : Guid.NewGuid();
+
+            var command = new Wms.Application.Features.Imports.CommitImportCommand
+            {
+                ImportType = _importType,
+                ProductRows = _validationResult.ProductRows,
+                StockRows = _validationResult.StockRows
+            };
+
+            var result = await ImportService.CommitImportAsync(command, userId);
+            if (result.Succeeded && result.Data != null)
+            {
+                _executionResult = result.Data;
+                _activeStep = 2;
+            }
+            else
+            {
+                Snackbar.Add($"Gagal commit impor: {result.ErrorMessage}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal melakukan commit impor: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isCommitting = false;
+        }
+    }
+
+    private void ResetWizard()
+    {
+        _selectedFile = null;
+        _fileBytes = null;
+        _validationResult = null;
+        _executionResult = null;
+        _activeStep = 0;
+    }
+}

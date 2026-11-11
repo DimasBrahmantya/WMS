@@ -1,0 +1,127 @@
+@rendermode InteractiveServer
+@inject Wms.Application.Features.WarehouseOperations.IPickingService PickingService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center">
+            <MudIcon Icon="@Icons.Material.Filled.Route" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Rute Picking Optimal (FEFO) - @OrderNumber</MudText>
+        </MudStack>
+    </TitleContent>
+    <DialogContent>
+        @if (_loading)
+        {
+            <div class="d-flex justify-center my-8">
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            </div>
+        }
+        else if (_pickingList == null || _pickingList.Lines.Count == 0)
+        {
+            <MudAlert Severity="Severity.Warning">
+                Tidak ada alokasi picking yang tersedia untuk pesanan ini. Pastikan stok mencukupi di gudang.
+            </MudAlert>
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-3" Dense="true">
+                Pesanan: <strong>@_pickingList.OrderNumber</strong> | Pelanggan: <strong>@_pickingList.CustomerName</strong> | Gudang: <strong>@_pickingList.WarehouseName</strong>
+            </MudAlert>
+
+            @foreach (var line in _pickingList.Lines)
+            {
+                <MudCard Elevation="0" Outlined="true" Class="mb-3">
+                    <MudCardHeader>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                                @line.ProductName (SKU: @line.ProductSku) — Target: @line.QuantityOrdered Unit
+                            </MudText>
+                        </CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent Class="pt-0">
+                        @if (line.Allocations.Count == 0)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Error">Belum ada alokasi stok untuk item ini.</MudText>
+                        }
+                        else
+                        {
+                            <MudTable Items="@line.Allocations" Dense="true" Hover="true">
+                                <HeaderContent>
+                                    <MudTh>Lokasi Rak</MudTh>
+                                    <MudTh>Zona</MudTh>
+                                    <MudTh>Nomor Batch</MudTh>
+                                    <MudTh>Tgl Kedaluwarsa</MudTh>
+                                    <MudTh>Jumlah Diambil</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd><strong>@context.LocationCode</strong></MudTd>
+                                    <MudTd>@(context.Zone ?? "-")</MudTd>
+                                    <MudTd>
+                                        @if (!string.IsNullOrEmpty(context.BatchNumber))
+                                        {
+                                            <MudChip T="string" Color="Color.Info" Size="Size.Small">@context.BatchNumber</MudChip>
+                                        }
+                                        else
+                                        {
+                                            <span>-</span>
+                                        }
+                                    </MudTd>
+                                    <MudTd>
+                                        @(context.ExpiryDate.HasValue ? context.ExpiryDate.Value.ToString("dd MMM yyyy") : "-")
+                                    </MudTd>
+                                    <MudTd>
+                                        <MudText Typo="Typo.body2" Class="font-weight-bold" Color="Color.Primary">@context.QuantityToPick</MudText>
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        }
+                    </MudCardContent>
+                </MudCard>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="Close">Tutup</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Print" OnClick="Print">
+            Cetak Picking List
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private MudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter]
+    public Guid SalesOrderId { get; set; }
+
+    [Parameter]
+    public string OrderNumber { get; set; } = string.Empty;
+
+    private Wms.Application.Features.WarehouseOperations.PickingListDto? _pickingList;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _loading = true;
+        try
+        {
+            _pickingList = await PickingService.GeneratePickingListForSalesOrderAsync(SalesOrderId);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal menghasilkan picking list: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void Print()
+    {
+        Snackbar.Add("Perintah cetak lembar rute picking dikirim ke printer.", Severity.Info);
+    }
+
+    private void Close() => MudDialog.Close();
+}

@@ -11,3 +11,4 @@ public interface IExportService
     Task<Result> ProcessExportJobAsync(Guid jobId, CancellationToken cancellationToken = default);
     Task<Result> CleanupExpiredExportsAsync(CancellationToken cancellationToken = default);
 }
+

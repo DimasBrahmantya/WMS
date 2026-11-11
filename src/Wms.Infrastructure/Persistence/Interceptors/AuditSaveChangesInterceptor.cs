@@ -70,7 +70,8 @@ public class AuditSaveChangesInterceptor : SaveChangesInterceptor
                     _ => "Unknown"
                 };
 
-                var entityId = entry.Property("Id")?.CurrentValue?.ToString();
+                var idProperty = entry.Properties.FirstOrDefault(p => p.Metadata.Name == "Id" || p.Metadata.IsPrimaryKey());
+                var entityId = idProperty?.CurrentValue?.ToString() ?? Guid.NewGuid().ToString();
 
                 var oldValues = new Dictionary<string, object?>();
                 var newValues = new Dictionary<string, object?>();

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -124,8 +124,8 @@ namespace Wms.Infrastructure.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_inventory_balances", x => x.Id);
-                    table.CheckConstraint("CK_inventory_balances_on_hand", "\"on_hand\" >= 0");
-                    table.CheckConstraint("CK_inventory_balances_reserved", "\"reserved\" >= 0 AND \"reserved\" <= \"on_hand\"");
+                    table.CheckConstraint("CK_inventory_balances_on_hand", "\"OnHand\" >= 0");
+                    table.CheckConstraint("CK_inventory_balances_reserved", "\"Reserved\" >= 0 AND \"Reserved\" <= \"OnHand\"");
                     table.ForeignKey(
                         name: "FK_inventory_balances_products_ProductId",
                         column: x => x.ProductId,
@@ -207,7 +207,7 @@ namespace Wms.Infrastructure.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_stock_movements", x => x.Id);
-                    table.CheckConstraint("CK_stock_movements_quantity", "\"quantity\" > 0");
+                    table.CheckConstraint("CK_stock_movements_quantity", "\"Quantity\" > 0");
                     table.ForeignKey(
                         name: "FK_stock_movements_products_ProductId",
                         column: x => x.ProductId,
@@ -316,8 +316,8 @@ namespace Wms.Infrastructure.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_goods_receipt_lines", x => x.Id);
-                    table.CheckConstraint("CK_goods_receipt_lines_quantity", "\"quantity\" > 0");
-                    table.CheckConstraint("CK_goods_receipt_lines_unit_cost", "\"unit_cost\" >= 0");
+                    table.CheckConstraint("CK_goods_receipt_lines_quantity", "\"Quantity\" > 0");
+                    table.CheckConstraint("CK_goods_receipt_lines_unit_cost", "\"UnitCost\" >= 0");
                     table.ForeignKey(
                         name: "FK_goods_receipt_lines_goods_receipts_GoodsReceiptId",
                         column: x => x.GoodsReceiptId,
@@ -355,7 +355,7 @@ namespace Wms.Infrastructure.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_stock_out_lines", x => x.Id);
-                    table.CheckConstraint("CK_stock_out_lines_quantity", "\"quantity\" > 0");
+                    table.CheckConstraint("CK_stock_out_lines_quantity", "\"Quantity\" > 0");
                     table.ForeignKey(
                         name: "FK_stock_out_lines_products_ProductId",
                         column: x => x.ProductId,

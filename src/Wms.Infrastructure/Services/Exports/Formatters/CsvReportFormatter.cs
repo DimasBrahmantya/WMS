@@ -39,3 +39,4 @@ public class CsvReportFormatter : IReportFormatter
         return memoryStream.ToArray();
     }
 }
+

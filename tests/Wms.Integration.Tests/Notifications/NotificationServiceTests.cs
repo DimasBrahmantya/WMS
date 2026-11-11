@@ -151,3 +151,4 @@ public class NotificationServiceTests
         summaryFinal.TotalUnread.Should().Be(0);
     }
 }
+

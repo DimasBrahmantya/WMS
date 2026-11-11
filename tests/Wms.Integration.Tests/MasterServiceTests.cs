@@ -160,6 +160,41 @@ public class MasterServiceTests
     }
 
     [Fact]
+    public async Task ProductService_CreateAndUpdate_ShouldPreventDuplicateBarcode()
+    {
+        using var context = CreateDbContext();
+        var cat = new Category { Id = Guid.NewGuid(), Name = "Kategori Barcode", IsActive = true, CreatedAtUtc = DateTime.UtcNow };
+        var unit = new Unit { Id = Guid.NewGuid(), Name = "Pcs", Abbreviation = "PCS", IsActive = true, CreatedAtUtc = DateTime.UtcNow };
+        context.Categories.Add(cat);
+        context.Units.Add(unit);
+        await context.SaveChangesAsync();
+
+        var service = new ProductService(context, new CreateProductValidator(), new UpdateProductValidator());
+
+        // 1. Create first product with barcode "8991234567890"
+        var first = await service.CreateProductAsync(new CreateProductCommand(
+            "SKU-BAR-01", "8991234567890", "Barang Barcode 1", null, null, cat.Id, unit.Id, 0, 100, TrackingMethod.None));
+        first.Succeeded.Should().BeTrue();
+
+        // 2. Create second product with identical barcode -> Should fail
+        var duplicateCreate = await service.CreateProductAsync(new CreateProductCommand(
+            "SKU-BAR-02", " 8991234567890 ", "Barang Barcode 2", null, null, cat.Id, unit.Id, 0, 100, TrackingMethod.None));
+        duplicateCreate.Succeeded.Should().BeFalse();
+        duplicateCreate.ErrorMessage.Should().Contain("sudah ada");
+
+        // 3. Create second product with distinct barcode -> Should succeed
+        var second = await service.CreateProductAsync(new CreateProductCommand(
+            "SKU-BAR-02", "8990000000002", "Barang Barcode 2", null, null, cat.Id, unit.Id, 0, 100, TrackingMethod.None));
+        second.Succeeded.Should().BeTrue();
+
+        // 4. Update second product barcode to first product barcode -> Should fail
+        var duplicateUpdate = await service.UpdateProductAsync(new UpdateProductCommand(
+            second.Data!.Id, "SKU-BAR-02", "8991234567890", "Barang Barcode 2", null, null, cat.Id, unit.Id, 0, 100, TrackingMethod.None, true));
+        duplicateUpdate.Succeeded.Should().BeFalse();
+        duplicateUpdate.ErrorMessage.Should().Contain("sudah digunakan");
+    }
+
+    [Fact]
     public async Task ProductService_GetProducts_ShouldSupportFilterAndPagination()
     {
         using var context = CreateDbContext();

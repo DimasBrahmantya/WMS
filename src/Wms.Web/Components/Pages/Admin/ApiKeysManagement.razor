@@ -1,0 +1,172 @@
+@page "/admin/api-keys"
+@attribute [Authorize(Policy = "Permissions.ApiKeysManage")]
+@rendermode InteractiveServer
+@inject Wms.Application.Features.ApiKeys.IApiKeyService ApiKeyService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Manajemen API Key - WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4 mb-8">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Manajemen Kunci REST API Eksternal</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Kelola kredensial akses API eksternal (ERP, POS, E-Commerce). Kunci dienkripsi menggunakan SHA-256 hash.
+            </MudText>
+        </div>
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadKeysAsync">
+                Muat Ulang
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.VpnKey" OnClick="OpenCreateDialog">
+                Buat API Key
+            </MudButton>
+        </MudStack>
+    </MudStack>
+
+    @if (!string.IsNullOrEmpty(_generatedPlainKey))
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="mb-4" ShowCloseIcon="true" CloseIconClicked="@(() => _generatedPlainKey = null)">
+            <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Kunci Rahasia API Anda Telah Dibuat!</MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Simpan kunci ini di tempat yang aman sekarang. Kunci ini <strong>TIDAK DAPAT DILIHAT LAGI</strong> setelah Anda menutup pesan ini.
+            </MudText>
+            <MudPaper Class="pa-2 d-flex align-center bg-white text-dark" Elevation="0">
+                <code class="flex-grow-1" style="font-size: 1.1rem; letter-spacing: 1px;">@_generatedPlainKey</code>
+                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Color="Color.Primary" OnClick="CopyKeyToClipboard" aria-label="Salin Kunci" />
+            </MudPaper>
+        </MudAlert>
+    }
+
+    <MudPaper Elevation="1" Class="pa-4">
+        <MudTable Items="@_apiKeys" Hover="true" Striped="true" Loading="@_loading" Dense="true">
+            <HeaderContent>
+                <MudTh>Nama Klien / Sistem</MudTh>
+                <MudTh>Awalan Kunci</MudTh>
+                <MudTh>Cakupan Hak Akses</MudTh>
+                <MudTh>Dibuat Pada</MudTh>
+                <MudTh>Kedaluwarsa</MudTh>
+                <MudTh>Terakhir Digunakan</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Aksi</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Nama Klien">
+                    <MudText Typo="Typo.body2" Class="font-weight-bold">@context.Name</MudText>
+                </MudTd>
+                <MudTd DataLabel="Awalan Kunci">
+                    <code>@context.KeyPrefix...</code>
+                </MudTd>
+                <MudTd DataLabel="Scope">
+                    <MudChip T="string" Color="Color.Info" Size="Size.Small">@context.Scopes</MudChip>
+                </MudTd>
+                <MudTd DataLabel="Dibuat Pada">
+                    @context.CreatedAtUtc.ToString("dd MMM yyyy HH:mm")
+                </MudTd>
+                <MudTd DataLabel="Kedaluwarsa">
+                    @(context.ExpiresAtUtc.HasValue ? context.ExpiresAtUtc.Value.ToString("dd MMM yyyy") : "Tidak Ada")
+                </MudTd>
+                <MudTd DataLabel="Terakhir Digunakan">
+                    @(context.LastUsedAtUtc.HasValue ? context.LastUsedAtUtc.Value.ToString("dd MMM yyyy HH:mm") : "-")
+                </MudTd>
+                <MudTd DataLabel="Status">
+                    @if (context.IsActive)
+                    {
+                        <MudChip T="string" Color="Color.Success" Size="Size.Small">Aktif</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Color="Color.Error" Size="Size.Small">Dicabut</MudChip>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Aksi">
+                    @if (context.IsActive)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                   OnClick="@(() => RevokeKeyAsync(context))">
+                            Cabut
+                        </MudButton>
+                    }
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="new int[] { 10, 25, 50 }" />
+            </PagerContent>
+        </MudTable>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private IReadOnlyList<Wms.Application.Features.ApiKeys.ApiKeyDto> _apiKeys = Array.Empty<Wms.Application.Features.ApiKeys.ApiKeyDto>();
+    private bool _loading = true;
+    private string? _generatedPlainKey;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadKeysAsync();
+    }
+
+    private async Task LoadKeysAsync()
+    {
+        _loading = true;
+        try
+        {
+            _apiKeys = await ApiKeyService.GetApiKeysAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal memuat daftar API Key: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters();
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = DialogService.Show<ApiKeyCreateDialog>("Buat Kunci API Baru", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: Wms.Application.Features.ApiKeys.CreateApiKeyResultDto created })
+        {
+            _generatedPlainKey = created.PlainSecretKey;
+            await LoadKeysAsync();
+        }
+    }
+
+    private async Task RevokeKeyAsync(Wms.Application.Features.ApiKeys.ApiKeyDto key)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Konfirmasi Pencabutan",
+            $"Cabut kunci API '{key.Name}' ({key.KeyPrefix}...)? Klien eksternal yang menggunakan kunci ini tidak akan dapat mengakses API lagi.",
+            yesText: "Cabut Kunci", cancelText: "Batal");
+
+        if (confirm == true)
+        {
+            var result = await ApiKeyService.RevokeApiKeyAsync(key.Id);
+            if (result.Succeeded)
+            {
+                Snackbar.Add($"Kunci API {key.Name} berhasil dicabut.", Severity.Success);
+                await LoadKeysAsync();
+            }
+            else
+            {
+                Snackbar.Add($"Gagal mencabut kunci API: {result.ErrorMessage}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task CopyKeyToClipboard()
+    {
+        if (!string.IsNullOrEmpty(_generatedPlainKey))
+        {
+            await JsRuntime.InvokeVoidAsync("navigator.clipboard.writeText", _generatedPlainKey);
+            Snackbar.Add("Kunci API berhasil disalin ke papan klip!", Severity.Success);
+        }
+    }
+}
+

@@ -9,6 +9,7 @@ using Wms.Domain.Entities.Identity;
 using Wms.Domain.Entities.Inventory;
 using Wms.Domain.Entities.Master;
 using Wms.Domain.Entities.Notifications;
+using Wms.Domain.Entities.Orders;
 using Wms.Domain.Entities.System;
 using Wms.Domain.Entities.Transactions;
 
@@ -86,6 +87,12 @@ public class WmsDbContext : IdentityDbContext<
     public DbSet<AppNotification> AppNotifications => Set<AppNotification>();
     public DbSet<ExportJob> ExportJobs => Set<ExportJob>();
 
+    // Tahap 7 — Fitur Lanjutan
+    public DbSet<Batch> Batches => Set<Batch>();
+    public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
+    public DbSet<SalesOrderLine> SalesOrderLines => Set<SalesOrderLine>();
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
         if (Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
@@ -139,6 +146,8 @@ public class WmsDbContext : IdentityDbContext<
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.HasDefaultSchema("wms");
 
         // Configure table names to snake_case
         builder.Entity<ApplicationUser>(entity =>
@@ -308,7 +317,7 @@ public class WmsDbContext : IdentityDbContext<
             entity.Property(p => p.Sku).HasMaxLength(100).IsRequired();
             entity.HasIndex(p => p.Sku).IsUnique();
             entity.Property(p => p.Barcode).HasMaxLength(100);
-            entity.HasIndex(p => p.Barcode).IsUnique().HasFilter("\"barcode\" IS NOT NULL");
+            entity.HasIndex(p => p.Barcode).IsUnique().HasFilter("\"Barcode\" IS NOT NULL");
             entity.Property(p => p.Name).HasMaxLength(200).IsRequired();
             entity.Property(p => p.Description).HasMaxLength(1000);
             entity.Property(p => p.Brand).HasMaxLength(100);
@@ -397,8 +406,8 @@ public class WmsDbContext : IdentityDbContext<
         {
             entity.ToTable("inventory_balances", t =>
             {
-                t.HasCheckConstraint("CK_inventory_balances_on_hand", "\"on_hand\" >= 0");
-                t.HasCheckConstraint("CK_inventory_balances_reserved", "\"reserved\" >= 0 AND \"reserved\" <= \"on_hand\"");
+                t.HasCheckConstraint("CK_inventory_balances_on_hand", "\"OnHand\" >= 0");
+                t.HasCheckConstraint("CK_inventory_balances_reserved", "\"Reserved\" >= 0 AND \"Reserved\" <= \"OnHand\"");
             });
 
             entity.HasKey(b => b.Id);
@@ -459,7 +468,7 @@ public class WmsDbContext : IdentityDbContext<
         {
             entity.ToTable("stock_movements", t =>
             {
-                t.HasCheckConstraint("CK_stock_movements_quantity", "\"quantity\" > 0");
+                t.HasCheckConstraint("CK_stock_movements_quantity", "\"Quantity\" > 0");
             });
 
             entity.HasKey(m => m.Id);
@@ -575,8 +584,8 @@ public class WmsDbContext : IdentityDbContext<
         {
             entity.ToTable("goods_receipt_lines", t =>
             {
-                t.HasCheckConstraint("CK_goods_receipt_lines_quantity", "\"quantity\" > 0");
-                t.HasCheckConstraint("CK_goods_receipt_lines_unit_cost", "\"unit_cost\" >= 0");
+                t.HasCheckConstraint("CK_goods_receipt_lines_quantity", "\"Quantity\" > 0");
+                t.HasCheckConstraint("CK_goods_receipt_lines_unit_cost", "\"UnitCost\" >= 0");
             });
 
             entity.HasKey(l => l.Id);
@@ -658,7 +667,7 @@ public class WmsDbContext : IdentityDbContext<
         {
             entity.ToTable("stock_out_lines", t =>
             {
-                t.HasCheckConstraint("CK_stock_out_lines_quantity", "\"quantity\" > 0");
+                t.HasCheckConstraint("CK_stock_out_lines_quantity", "\"Quantity\" > 0");
             });
 
             entity.HasKey(l => l.Id);
@@ -681,5 +690,6 @@ public class WmsDbContext : IdentityDbContext<
 
         Configurations.OperationalWorkflowConfigurations.Configure(builder, IsUserRestrictedToWarehouses, UserAllowedWarehouseIds);
         Configurations.NotificationAndExportConfigurations.Configure(builder);
+        Configurations.Tahap7Configurations.Configure(builder, IsUserRestrictedToWarehouses, UserAllowedWarehouseIds);
     }
 }

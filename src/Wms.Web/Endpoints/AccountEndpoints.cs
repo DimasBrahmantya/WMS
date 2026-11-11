@@ -15,20 +15,25 @@ public static class AccountEndpoints
             HttpContext context,
             [FromForm] string emailOrUsername,
             [FromForm] string password,
-            [FromForm] bool rememberMe,
+            [FromForm] bool? rememberMe,
             [FromForm] string? returnUrl,
             SignInManager<ApplicationUser> signInManager,
             UserManager<ApplicationUser> userManager) =>
         {
-            var user = await userManager.FindByEmailAsync(emailOrUsername)
-                       ?? await userManager.FindByNameAsync(emailOrUsername);
+            if (string.IsNullOrWhiteSpace(emailOrUsername) || string.IsNullOrWhiteSpace(password))
+            {
+                return Results.Redirect($"/login?error=invalid_credentials&returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
+            }
+
+            var user = await userManager.FindByEmailAsync(emailOrUsername.Trim())
+                       ?? await userManager.FindByNameAsync(emailOrUsername.Trim());
 
             if (user == null || !user.IsActive)
             {
                 return Results.Redirect($"/login?error=invalid_credentials&returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
             }
 
-            var result = await signInManager.PasswordSignInAsync(user, password, rememberMe, lockoutOnFailure: true);
+            var result = await signInManager.PasswordSignInAsync(user, password, rememberMe ?? false, lockoutOnFailure: true);
 
             if (result.IsLockedOut)
             {

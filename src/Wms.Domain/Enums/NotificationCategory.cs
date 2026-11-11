@@ -9,3 +9,4 @@ public enum NotificationCategory
     SystemExport = 5,
     General = 6
 }
+

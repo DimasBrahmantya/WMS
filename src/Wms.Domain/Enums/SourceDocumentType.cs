@@ -9,6 +9,7 @@ public enum SourceDocumentType
     StockIncident = 5,
     PurchaseOrder = 6,
     StockReturn = 7,
-    StockOpname = 8
+    StockOpname = 8,
+    SalesOrder = 9
 }
 

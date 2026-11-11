@@ -1,0 +1,345 @@
+@page "/sales-orders"
+@attribute [Authorize(Policy = "Permissions.SalesOrderView")]
+@rendermode InteractiveServer
+@inject Wms.Application.Features.SalesOrders.ISalesOrderService SalesOrderService
+@inject Wms.Application.Features.WarehouseOperations.IPickingService PickingService
+@inject Wms.Application.Features.Barcode.IBarcodeService BarcodeService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Sales Order & Reservasi Stok - WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+        <div>
+            <MudText Typo="Typo.h5" Class="font-weight-bold">Sales Order & Reservasi Stok</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Kelola pesanan penjualan dengan sistem soft-reservation atomik dan pemenuhan alokasi FEFO.
+            </MudText>
+        </div>
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadOrdersAsync">
+                Muat Ulang
+            </MudButton>
+            <AuthorizeView Policy="Permissions.SalesOrderCreate">
+                <Authorized>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+                        Buat Sales Order
+                    </MudButton>
+                </Authorized>
+            </AuthorizeView>
+        </MudStack>
+    </MudStack>
+
+    <MudPaper Elevation="1" Class="pa-4 mb-4">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-3">
+            <MudTextField @bind-Value="_searchQuery" Placeholder="Cari nomor pesanan, pelanggan, atau gudang..."
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" Class="flex-grow-1" />
+            <MudSelect T="Wms.Domain.Enums.SalesOrderStatus?" @bind-Value="_statusFilter" Label="Filter Status" Dense="true" Style="min-width: 180px;">
+                <MudSelectItem Value="@((Wms.Domain.Enums.SalesOrderStatus?)null)">Semua Status</MudSelectItem>
+                <MudSelectItem Value="@((Wms.Domain.Enums.SalesOrderStatus?)Wms.Domain.Enums.SalesOrderStatus.Draft)">Draft</MudSelectItem>
+                <MudSelectItem Value="@((Wms.Domain.Enums.SalesOrderStatus?)Wms.Domain.Enums.SalesOrderStatus.Confirmed)">Confirmed (Reserved)</MudSelectItem>
+                <MudSelectItem Value="@((Wms.Domain.Enums.SalesOrderStatus?)Wms.Domain.Enums.SalesOrderStatus.Picking)">Picking</MudSelectItem>
+                <MudSelectItem Value="@((Wms.Domain.Enums.SalesOrderStatus?)Wms.Domain.Enums.SalesOrderStatus.Dispatched)">Dispatched</MudSelectItem>
+                <MudSelectItem Value="@((Wms.Domain.Enums.SalesOrderStatus?)Wms.Domain.Enums.SalesOrderStatus.Cancelled)">Cancelled</MudSelectItem>
+            </MudSelect>
+        </MudStack>
+
+        <MudTable Items="@FilteredOrders" Hover="true" Striped="true" Loading="@_loading" Dense="true">
+            <HeaderContent>
+                <MudTh>Nomor Pesanan</MudTh>
+                <MudTh>Pelanggan</MudTh>
+                <MudTh>Gudang</MudTh>
+                <MudTh>Tgl Pesanan</MudTh>
+                <MudTh>Target Kirim</MudTh>
+                <MudTh>Total Nilai (Rp)</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Aksi</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Nomor Pesanan">
+                    <MudText Typo="Typo.body2" Class="font-weight-bold">@context.OrderNumber</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.LinesCount item</MudText>
+                </MudTd>
+                <MudTd DataLabel="Pelanggan">@context.CustomerName</MudTd>
+                <MudTd DataLabel="Gudang">@context.WarehouseName</MudTd>
+                <MudTd DataLabel="Tgl Pesanan">@context.OrderDate.ToString("dd MMM yyyy")</MudTd>
+                <MudTd DataLabel="Target Kirim">
+                    @(context.DeliveryDate.HasValue ? context.DeliveryDate.Value.ToString("dd MMM yyyy") : "-")
+                </MudTd>
+                <MudTd DataLabel="Total Nilai">@context.TotalAmount.ToString("N0")</MudTd>
+                <MudTd DataLabel="Status">
+                    @switch (context.Status)
+                    {
+                        case Wms.Domain.Enums.SalesOrderStatus.Draft:
+                            <MudChip T="string" Color="Color.Default" Size="Size.Small">Draft</MudChip>
+                            break;
+                        case Wms.Domain.Enums.SalesOrderStatus.Confirmed:
+                            <MudChip T="string" Color="Color.Info" Size="Size.Small" Icon="@Icons.Material.Filled.BookmarkBorder">Confirmed</MudChip>
+                            break;
+                        case Wms.Domain.Enums.SalesOrderStatus.Picking:
+                            <MudChip T="string" Color="Color.Warning" Size="Size.Small" Icon="@Icons.Material.Filled.AssignmentTurnedIn">Picking</MudChip>
+                            break;
+                        case Wms.Domain.Enums.SalesOrderStatus.Dispatched:
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small" Icon="@Icons.Material.Filled.LocalShipping">Dispatched</MudChip>
+                            break;
+                        case Wms.Domain.Enums.SalesOrderStatus.Cancelled:
+                            <MudChip T="string" Color="Color.Error" Size="Size.Small">Cancelled</MudChip>
+                            break;
+                    }
+                </MudTd>
+                <MudTd DataLabel="Aksi">
+                    <MudStack Row="true" Spacing="1">
+                        <MudIconButton Icon="@Icons.Material.Filled.QrCode2" Size="Size.Small" aria-label="Barcode Pesanan"
+                                       OnClick="@(() => ShowBarcode(context))" />
+
+                        @if (context.Status == Wms.Domain.Enums.SalesOrderStatus.Draft)
+                        {
+                            <AuthorizeView Policy="Permissions.SalesOrderApprove">
+                                <Authorized Context="authContext">
+                                    <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Small"
+                                               OnClick="@(() => ConfirmOrderAsync(context))">
+                                        Konfirmasi
+                                    </MudButton>
+                                </Authorized>
+                            </AuthorizeView>
+                        }
+
+                        @if (context.Status == Wms.Domain.Enums.SalesOrderStatus.Confirmed || context.Status == Wms.Domain.Enums.SalesOrderStatus.Picking)
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Route"
+                                       OnClick="@(() => OpenPickingList(context))">
+                                Picking
+                            </MudButton>
+                            <AuthorizeView Policy="Permissions.SalesOrderPost">
+                                <Authorized Context="authContext">
+                                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small"
+                                               OnClick="@(() => DispatchOrderAsync(context))">
+                                        Kirim
+                                    </MudButton>
+                                </Authorized>
+                            </AuthorizeView>
+                        }
+
+                        @if (context.Status == Wms.Domain.Enums.SalesOrderStatus.Draft || context.Status == Wms.Domain.Enums.SalesOrderStatus.Confirmed)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Cancel" Color="Color.Error" Size="Size.Small" aria-label="Batalkan Pesanan"
+                                           OnClick="@(() => CancelOrderAsync(context))" />
+                        }
+                    </MudStack>
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="new int[] { 10, 25, 50 }" />
+            </PagerContent>
+        </MudTable>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private List<Wms.Application.Features.SalesOrders.SalesOrderDto> _orders = new();
+    private string _searchQuery = string.Empty;
+    private Wms.Domain.Enums.SalesOrderStatus? _statusFilter;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadOrdersAsync();
+    }
+
+    private async Task LoadOrdersAsync()
+    {
+        _loading = true;
+        try
+        {
+            var paged = await SalesOrderService.GetSalesOrdersPagedAsync(new Wms.Application.Features.SalesOrders.GetSalesOrdersQuery
+            {
+                Page = 1,
+                PageSize = 200,
+                Status = _statusFilter
+            });
+            _orders = paged.Items.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal memuat pesanan: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private IEnumerable<Wms.Application.Features.SalesOrders.SalesOrderDto> FilteredOrders =>
+        _orders.Where(o =>
+            (_statusFilter == null || o.Status == _statusFilter) &&
+            (string.IsNullOrWhiteSpace(_searchQuery) ||
+             o.OrderNumber.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+             o.CustomerName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+             o.WarehouseName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)));
+
+    private async Task OpenCreateDialog()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = DialogService.Show<SalesOrderCreateDialog>("Buat Sales Order", options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            await LoadOrdersAsync();
+        }
+    }
+
+    private void OpenPickingList(Wms.Application.Features.SalesOrders.SalesOrderDto order)
+    {
+        var parameters = new DialogParameters
+        {
+            { "SalesOrderId", order.Id },
+            { "OrderNumber", order.OrderNumber }
+        };
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Large, FullWidth = true };
+        DialogService.Show<PickingListDialog>("Lembar Rute Picking", parameters, options);
+    }
+
+    private async Task<Guid> GetCurrentUserIdAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var claim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        return Guid.TryParse(claim, out var id) ? id : Guid.NewGuid();
+    }
+
+    private async Task ConfirmOrderAsync(Wms.Application.Features.SalesOrders.SalesOrderDto order)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Konfirmasi Pesanan",
+            $"Konfirmasi pesanan {order.OrderNumber}? Stok barang akan direservasi (soft-reservation).",
+            yesText: "Ya, Konfirmasi", cancelText: "Batal");
+
+        if (confirm == true)
+        {
+            try
+            {
+                var userId = await GetCurrentUserIdAsync();
+                var result = await SalesOrderService.ConfirmSalesOrderAsync(order.Id, userId);
+                if (result.Succeeded)
+                {
+                    Snackbar.Add($"Pesanan {order.OrderNumber} dikonfirmasi dan stok berhasil direservasi.", Severity.Success);
+                    await LoadOrdersAsync();
+                }
+                else
+                {
+                    Snackbar.Add($"Gagal konfirmasi: {result.ErrorMessage}", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Gagal mengonfirmasi pesanan: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task DispatchOrderAsync(Wms.Application.Features.SalesOrders.SalesOrderDto order)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Konfirmasi Pengiriman",
+            $"Kirim pesanan {order.OrderNumber}? Stok on-hand dan reservasi akan dipotong secara atomik melalui FEFO allocation.",
+            yesText: "Ya, Kirim Sekarang", cancelText: "Batal");
+
+        if (confirm == true)
+        {
+            try
+            {
+                var userId = await GetCurrentUserIdAsync();
+                
+                // Ambil alokasi FEFO aktual
+                var pickingList = await PickingService.GeneratePickingListForSalesOrderAsync(order.Id);
+                var allocations = new List<Wms.Application.Features.SalesOrders.DispatchLineAllocationCommand>();
+
+                foreach (var line in order.Lines)
+                {
+                    var pickLine = pickingList.Lines.FirstOrDefault(pl => pl.ProductId == line.ProductId);
+                    if (pickLine != null && pickLine.Allocations.Count > 0)
+                    {
+                        foreach (var alloc in pickLine.Allocations)
+                        {
+                            allocations.Add(new Wms.Application.Features.SalesOrders.DispatchLineAllocationCommand
+                            {
+                                SalesOrderLineId = line.Id,
+                                WarehouseLocationId = alloc.WarehouseLocationId,
+                                BatchNumber = alloc.BatchNumber,
+                                Quantity = alloc.QuantityToPick
+                            });
+                        }
+                    }
+                }
+
+                var cmd = new Wms.Application.Features.SalesOrders.DispatchSalesOrderCommand
+                {
+                    SalesOrderId = order.Id,
+                    UserId = userId,
+                    IdempotencyKey = Guid.NewGuid().ToString(),
+                    Allocations = allocations
+                };
+
+                var result = await SalesOrderService.DispatchSalesOrderAsync(cmd);
+                if (result.Succeeded)
+                {
+                    Snackbar.Add($"Pesanan {order.OrderNumber} berhasil dikirim dan stok terupdate.", Severity.Success);
+                    await LoadOrdersAsync();
+                }
+                else
+                {
+                    Snackbar.Add($"Gagal mengirim pesanan: {result.ErrorMessage}", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Gagal mengirim pesanan: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task CancelOrderAsync(Wms.Application.Features.SalesOrders.SalesOrderDto order)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Batalkan Pesanan",
+            $"Apakah Anda yakin ingin membatalkan pesanan {order.OrderNumber}? Reservasi stok akan dilepaskan kembali jika pesanan sebelumnya sudah dikonfirmasi.",
+            yesText: "Ya, Batalkan", cancelText: "Kembali");
+
+        if (confirm == true)
+        {
+            try
+            {
+                var userId = await GetCurrentUserIdAsync();
+                var result = await SalesOrderService.CancelSalesOrderAsync(order.Id, userId, "Dibatalkan oleh pengguna");
+                if (result.Succeeded)
+                {
+                    Snackbar.Add($"Pesanan {order.OrderNumber} berhasil dibatalkan.", Severity.Info);
+                    await LoadOrdersAsync();
+                }
+                else
+                {
+                    Snackbar.Add($"Gagal membatalkan pesanan: {result.ErrorMessage}", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Gagal membatalkan pesanan: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private void ShowBarcode(Wms.Application.Features.SalesOrders.SalesOrderDto order)
+    {
+        var parameters = new DialogParameters
+        {
+            { "Title", $"Barcode & QR - {order.OrderNumber}" },
+            { "Code", order.OrderNumber },
+            { "Subtitle", $"Pelanggan: {order.CustomerName} | Nilai: Rp {order.TotalAmount:N0}" }
+        };
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        DialogService.Show<Wms.Web.Components.Common.BarcodeDisplayDialog>("Barcode", parameters, options);
+    }
+}

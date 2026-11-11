@@ -1,0 +1,117 @@
+@using MudBlazor
+@using Wms.Application.Features.Master.Products
+@inject IProductService ProductService
+@inject ISnackbar Snackbar
+
+<MudPaper Class="pa-3 mb-3" Outlined="true">
+    <MudGrid>
+        <MudItem xs="12" sm="8" md="9">
+            <MudTextField @bind-Value="_scannedValue"
+                          Label="Pindai Barcode / Ketik SKU"
+                          Placeholder="Arahkan scanner atau ketik SKU/Barcode lalu tekan Enter..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.QrCodeScanner"
+                          Immediate="true"
+                          OnKeyDown="HandleKeyDown"
+                          Clearable="true"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          HelperText="Mendukung scanner keyboard-wedge atau input manual." />
+        </MudItem>
+        <MudItem xs="12" sm="4" md="3" Class="d-flex align-center gap-2">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="HandleSearchAsync"
+                       Disabled="_isSearching"
+                       Size="Size.Medium">
+                @if (_isSearching)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                    <span>Mencari...</span>
+                }
+                else
+                {
+                    <span>Cari</span>
+                }
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+
+    @if (_lastScannedProduct != null)
+    {
+        <MudAlert Severity="Severity.Success" Dense="true" Class="mt-2" ShowCloseIcon="true" CloseIconClicked="() => _lastScannedProduct = null">
+            <strong>Barang Ditemukan:</strong> @_lastScannedProduct.Sku - @_lastScannedProduct.Name (@_lastScannedProduct.UnitName)
+        </MudAlert>
+    }
+</MudPaper>
+
+@code {
+    [Parameter]
+    public EventCallback<ProductDto> OnProductSelected { get; set; }
+
+    private string _scannedValue = string.Empty;
+    private bool _isSearching;
+    private ProductDto? _lastScannedProduct;
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await HandleSearchAsync();
+        }
+    }
+
+    private async Task HandleSearchAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_scannedValue))
+        {
+            Snackbar.Add("Masukkan atau pindai SKU/Barcode terlebih dahulu.", Severity.Warning);
+            return;
+        }
+
+        _isSearching = true;
+        try
+        {
+            var term = _scannedValue.Trim();
+            var query = new GetProductsQuery
+            {
+                Search = term,
+                IsActive = true,
+                Page = 1,
+                PageSize = 10
+            };
+
+            var paged = await ProductService.GetProductsAsync(query);
+            var match = paged.Items.FirstOrDefault(p =>
+                string.Equals(p.Sku, term, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.Barcode, term, StringComparison.OrdinalIgnoreCase));
+
+            if (match == null && paged.Items.Count > 0)
+            {
+                // Fallback to first partial match
+                match = paged.Items[0];
+            }
+
+            if (match != null)
+            {
+                _lastScannedProduct = match;
+                _scannedValue = string.Empty;
+                Snackbar.Add($"Barang ditemukan: {match.Sku} - {match.Name}", Severity.Success);
+                await OnProductSelected.InvokeAsync(match);
+            }
+            else
+            {
+                Snackbar.Add($"Tidak ada barang yang cocok dengan SKU/Barcode '{term}'.", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal mencari barang: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isSearching = false;
+        }
+    }
+}

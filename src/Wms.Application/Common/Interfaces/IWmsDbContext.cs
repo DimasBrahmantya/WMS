@@ -6,6 +6,7 @@ using Wms.Domain.Entities.Identity;
 using Wms.Domain.Entities.Inventory;
 using Wms.Domain.Entities.Master;
 using Wms.Domain.Entities.Notifications;
+using Wms.Domain.Entities.Orders;
 using Wms.Domain.Entities.System;
 using Wms.Domain.Entities.Transactions;
 
@@ -60,6 +61,12 @@ public interface IWmsDbContext
     // Notifikasi & Ekspor (Fase 2 / Tahap 6)
     DbSet<AppNotification> AppNotifications { get; }
     DbSet<ExportJob> ExportJobs { get; }
+
+    // Tahap 7 — Fitur Lanjutan
+    DbSet<Batch> Batches { get; }
+    DbSet<SalesOrder> SalesOrders { get; }
+    DbSet<SalesOrderLine> SalesOrderLines { get; }
+    DbSet<ApiKey> ApiKeys { get; }
 
     DatabaseFacade Database { get; }
 

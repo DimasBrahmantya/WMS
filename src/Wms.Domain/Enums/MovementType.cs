@@ -12,6 +12,7 @@ public enum MovementType
     TransferOut = 8,
     PurchaseReturn = 9,
     CustomerReturn = 10,
-    StockIncident = 11
+    StockIncident = 11,
+    SalesOrderIssue = 12
 }
 

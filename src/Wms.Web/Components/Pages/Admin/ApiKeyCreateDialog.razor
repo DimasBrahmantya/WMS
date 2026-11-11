@@ -1,0 +1,108 @@
+@rendermode InteractiveServer
+@inject Wms.Application.Features.ApiKeys.IApiKeyService ApiKeyService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center">
+            <MudIcon Icon="@Icons.Material.Filled.VpnKey" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Buat Kunci REST API Baru</MudText>
+        </MudStack>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_name" Label="Nama Klien / Sistem"
+                      Placeholder="Misal: ERP Integrasi, POS Sinkronisasi" Required="true" Class="mb-3" Variant="Variant.Outlined" />
+
+        <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-1">Cakupan Hak Akses (Scopes):</MudText>
+        <MudCheckBox @bind-Value="_scopeProductsRead" Label="products:read (Membaca katalog produk)" Dense="true" Color="Color.Primary" />
+        <MudCheckBox @bind-Value="_scopeInventoryRead" Label="inventory:read (Membaca saldo persediaan gudang)" Dense="true" Color="Color.Primary" />
+        <MudCheckBox @bind-Value="_scopeSalesOrdersRead" Label="salesorders:read (Membaca status sales order)" Dense="true" Color="Color.Primary" />
+        <MudCheckBox @bind-Value="_scopeSalesOrdersWrite" Label="salesorders:write (Membuat sales order baru)" Dense="true" Color="Color.Primary" />
+
+        <MudDatePicker Label="Masa Berlaku (Opsional)" @bind-Date="_expiresAt" Variant="Variant.Outlined" Class="mt-3"
+                       HelperText="Kosongkan jika kunci berlaku tanpa batas waktu" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" OnClick="Cancel">Batal</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@_saving" OnClick="SaveAsync">
+            @if (_saving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Membuat Kunci...</span>
+            }
+            else
+            {
+                <span>Generate Key</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private MudDialogInstance MudDialog { get; set; } = default!;
+
+    private string _name = string.Empty;
+    private bool _scopeProductsRead = true;
+    private bool _scopeInventoryRead = true;
+    private bool _scopeSalesOrdersRead = true;
+    private bool _scopeSalesOrdersWrite = false;
+    private DateTime? _expiresAt;
+    private bool _saving = false;
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_name))
+        {
+            Snackbar.Add("Nama klien atau sistem wajib diisi.", Severity.Warning);
+            return;
+        }
+
+        var selectedScopes = new List<string>();
+        if (_scopeProductsRead) selectedScopes.Add(Wms.Domain.Enums.ApiKeyScope.ProductsRead);
+        if (_scopeInventoryRead) selectedScopes.Add(Wms.Domain.Enums.ApiKeyScope.InventoryRead);
+        if (_scopeSalesOrdersRead) selectedScopes.Add(Wms.Domain.Enums.ApiKeyScope.SalesOrdersRead);
+        if (_scopeSalesOrdersWrite) selectedScopes.Add(Wms.Domain.Enums.ApiKeyScope.SalesOrdersWrite);
+
+        if (selectedScopes.Count == 0)
+        {
+            Snackbar.Add("Pilih minimal satu cakupan hak akses (scope).", Severity.Warning);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            DateTime? expiryUtc = _expiresAt.HasValue
+                ? DateTime.SpecifyKind(_expiresAt.Value, DateTimeKind.Utc)
+                : null;
+
+            var cmd = new Wms.Application.Features.ApiKeys.CreateApiKeyCommand
+            {
+                Name = _name.Trim(),
+                Scopes = selectedScopes,
+                ExpiresAtUtc = expiryUtc
+            };
+
+            var result = await ApiKeyService.CreateApiKeyAsync(cmd);
+            if (result.Succeeded && result.Data != null)
+            {
+                MudDialog.Close(DialogResult.Ok(result.Data));
+            }
+            else
+            {
+                Snackbar.Add($"Gagal membuat kunci API: {result.ErrorMessage}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal membuat kunci API: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

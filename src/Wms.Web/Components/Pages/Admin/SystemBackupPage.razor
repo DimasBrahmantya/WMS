@@ -1,0 +1,89 @@
+@page "/admin/backup"
+@attribute [Authorize(Policy = "Permissions.SystemBackup")]
+@rendermode InteractiveServer
+@inject Wms.Application.Features.Backup.ISystemBackupService BackupService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JsRuntime
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Cadangan & Ekspor Sistem - WMS</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4 mb-8">
+    <MudText Typo="Typo.h5" Class="font-weight-bold mb-1">Cadangan & Ekspor Snapshot Sistem</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+        Ekspor seluruh data database (Produk, Gudang, Stok, Transaksi, Sales Order, Pelanggan, Pemasok) ke dalam format terstruktur JSON dengan verifikasi integritas hash SHA-256.
+    </MudText>
+
+    <MudPaper Class="pa-6" Elevation="1">
+        <MudStack AlignItems="AlignItems.Center" Spacing="4" Class="text-center">
+            <MudIcon Icon="@Icons.Material.Filled.Backup" Color="Color.Primary" Style="font-size: 5rem;" />
+            <div>
+                <MudText Typo="Typo.h6" Class="font-weight-bold">Ekspor Cadangan Lengkap</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Style="max-width: 500px;" Class="mx-auto mt-1">
+                    Cadangan ini mencakup seluruh entitas operasional dan master data. Berkas JSON yang diunduh dilengkapi dengan checksum SHA-256 untuk memastikan integritas data tidak dimanipulasi.
+                </MudText>
+            </div>
+
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large"
+                       StartIcon="@Icons.Material.Filled.CloudDownload"
+                       Disabled="@_isExporting" OnClick="GenerateBackupAsync">
+                @if (_isExporting)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Mengekspor & Mengomputasi Hash SHA-256...</span>
+                }
+                else
+                {
+                    <span>Buat & Unduh Cadangan JSON</span>
+                }
+            </MudButton>
+
+            @if (_lastBackupResult != null)
+            {
+                <MudCard Elevation="0" Outlined="true" Class="w-100 text-left pa-4 mt-4">
+                    <MudText Typo="Typo.subtitle2" Class="font-weight-bold mb-2">Informasi Ekspor Terakhir:</MudText>
+                    <MudText Typo="Typo.body2"><strong>Nama Berkas:</strong> @_lastBackupResult.FileName</MudText>
+                    <MudText Typo="Typo.body2"><strong>Waktu Ekspor:</strong> @_lastBackupResult.ExportedAtUtc.ToString("dd MMM yyyy HH:mm:ss") UTC</MudText>
+                    <MudText Typo="Typo.body2"><strong>Total Rekor Data:</strong> @_lastBackupResult.RecordCount entri</MudText>
+                    <MudText Typo="Typo.body2"><strong>Ukuran Berkas:</strong> @((_lastBackupResult.Content.Length / 1024.0).ToString("N2")) KB</MudText>
+                    <MudText Typo="Typo.body2" Class="mt-2"><strong>SHA-256 Checksum:</strong></MudText>
+                    <code class="d-block pa-2 bg-light rounded mt-1" style="word-break: break-all; font-size: 0.85rem;">
+                        @_lastBackupResult.ChecksumSha256
+                    </code>
+                </MudCard>
+            }
+        </MudStack>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private bool _isExporting = false;
+    private Wms.Application.Features.Backup.BackupResultDto? _lastBackupResult;
+
+    private async Task GenerateBackupAsync()
+    {
+        _isExporting = true;
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var username = authState.User.Identity?.Name ?? "SuperAdmin";
+
+            _lastBackupResult = await BackupService.CreateSnapshotBackupAsync(username);
+
+            // Trigger file download via JS Base64
+            var base64 = Convert.ToBase64String(_lastBackupResult.Content);
+            await JsRuntime.InvokeVoidAsync("downloadFileFromBase64", _lastBackupResult.FileName, _lastBackupResult.ContentType, base64);
+
+            Snackbar.Add($"Cadangan {_lastBackupResult.FileName} berhasil diunduh!", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Gagal membuat cadangan: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isExporting = false;
+        }
+    }
+}
+

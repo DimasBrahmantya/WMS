@@ -1,7 +1,6 @@
 @page "/"
 @attribute [Authorize]
-@inject IDashboardService DashboardService
-@inject IWarehouseService WarehouseService
+@inject IServiceScopeFactory ScopeFactory
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
 @inject IClock Clock
@@ -475,7 +474,9 @@
     {
         try
         {
-            var warehouses = await WarehouseService.GetActiveWarehousesAsync();
+            using var scope = ScopeFactory.CreateScope();
+            var warehouseService = scope.ServiceProvider.GetRequiredService<IWarehouseService>();
+            var warehouses = await warehouseService.GetActiveWarehousesAsync();
             _availableWarehouses = warehouses.ToList();
         }
         catch (Exception ex)
@@ -527,7 +528,9 @@
         _loading = true;
         try
         {
-            _summary = await DashboardService.GetDashboardSummaryAsync(_filter);
+            using var scope = ScopeFactory.CreateScope();
+            var dashboardService = scope.ServiceProvider.GetRequiredService<IDashboardService>();
+            _summary = await dashboardService.GetDashboardSummaryAsync(_filter);
         }
         catch (Exception ex)
         {
